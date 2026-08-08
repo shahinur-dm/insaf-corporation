@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Pencil, Trash2 } from "lucide-react";
+import { FileText, Pencil, Trash2 } from "lucide-react";
 import { supplierService } from "@/services/supplier.service";
 import { PageHeader } from "@/components/common/PageHeader";
 import { DetailOrOutlet } from "@/components/common/DetailOrOutlet";
@@ -55,6 +55,11 @@ function SupplierDetailBody() {
         backLabel={t("suppliers.title")}
         actions={
           <div className="flex gap-2">
+            <Button asChild>
+              <Link to="/suppliers/$id/statement" params={{ id }}>
+                <FileText className="mr-1 h-4 w-4" /> {t("suppliers.statement")}
+              </Link>
+            </Button>
             <Button variant="outline" asChild>
               <Link to="/suppliers/$id/edit" params={{ id }}><Pencil className="mr-1 h-4 w-4" /> {t("common.edit")}</Link>
             </Button>

@@ -17,9 +17,14 @@ export const productSchema = z.object({
   category: z.enum(["LPG", "Industrial", "Medical", "Other"]),
   uom: z.enum(["kg", "cyl", "ltr", "pcs"]),
   price: z.coerce.number().min(0),
+  cost: z.coerce.number().min(0).optional(),
+  image: z.string().optional(),
   taxRate: z.coerce.number().min(0),
   stock: z.coerce.number().min(0),
   reorderLevel: z.coerce.number().min(0),
+  incomeAccountId: z.string().optional(),
+  expenseAccountId: z.string().optional(),
+  costingMethod: z.enum(["fifo", "lifo", "average"]),
 });
 
 export const cylinderSchema = z.object({
@@ -79,4 +84,37 @@ export const voucherSchema = z.object({
   drAccount: z.string().optional(),
   crAccount: z.string().optional(),
   notes: z.string().optional(),
+});
+
+export const journalLineSchema = z.object({
+  accountId: z.string().min(1, "Select an account"),
+  accountName: z.string().min(1, "Select an account"),
+  debit: z.coerce.number().min(0),
+  credit: z.coerce.number().min(0),
+  notes: z.string().optional(),
+});
+
+export const journalEntrySchema = z.object({
+  date: z.string().min(1, "Date required"),
+  notes: z.string().optional(),
+  lines: z.array(journalLineSchema).min(2, "Add at least two lines"),
+}).superRefine((val, ctx) => {
+  let debit = 0;
+  let credit = 0;
+  val.lines.forEach((line, i) => {
+    if (line.debit > 0 && line.credit > 0) {
+      ctx.addIssue({ code: "custom", message: "Enter debit or credit, not both", path: ["lines", i, "debit"] });
+    }
+    if (line.debit <= 0 && line.credit <= 0) {
+      ctx.addIssue({ code: "custom", message: "Enter a debit or credit", path: ["lines", i, "debit"] });
+    }
+    debit += line.debit;
+    credit += line.credit;
+  });
+  if (debit <= 0) {
+    ctx.addIssue({ code: "custom", message: "Amount must be positive", path: ["lines"] });
+  }
+  if (Math.abs(debit - credit) > 0.009) {
+    ctx.addIssue({ code: "custom", message: "Debit and credit must be equal", path: ["lines"] });
+  }
 });

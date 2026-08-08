@@ -62,7 +62,7 @@ export function PayslipPrint({ run, open, onOpenChange }: { run: PayrollRun | nu
               </thead>
               <tbody className="divide-y text-gray-800">
                 <tr>
-                  <td className="px-4 py-2">{t("hr.basic")}</td>
+                  <td className="px-4 py-2">{t("hr.basicSalary")}</td>
                   <td className="px-4 py-2 text-right">{formatCurrency(run.basic)}</td>
                   <td className="px-4 py-2 border-l">{t("hr.deduction")}</td>
                   <td className="px-4 py-2 text-right text-red-600">{run.deduction > 0 ? formatCurrency(run.deduction) : "—"}</td>

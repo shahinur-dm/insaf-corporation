@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { formatDateTime } from "@/utils/formatters";
+import { formatCurrency, formatDateTime } from "@/utils/formatters";
 import type { Product, StockMovement } from "@/types";
 import { useT } from "@/i18n";
 
@@ -96,6 +96,12 @@ export function InventoryPage() {
               { key: "stock", header: t("products.stock"), sortable: true, sortValue: (r) => r.stock, render: (r) => (
                 <Badge variant={r.stock <= r.reorderLevel ? "destructive" : "outline"}>{r.stock}</Badge>
               ), className: "text-right" },
+              { key: "method", header: t("products.costingMethod"), render: (r) => (
+                <span className="text-xs uppercase text-muted-foreground">
+                  {r.costingMethod === "lifo" ? "LIFO" : r.costingMethod === "average" ? t("products.costing.average") : "FIFO"}
+                </span>
+              ) },
+              { key: "cost", header: t("products.cost"), sortable: true, sortValue: (r) => r.cost ?? 0, render: (r) => formatCurrency(r.cost ?? 0), className: "text-right" },
               { key: "reorder", header: t("products.reorder"), sortable: true, sortValue: (r) => r.reorderLevel, render: (r) => r.reorderLevel, className: "text-right" },
             ]}
           />
@@ -113,6 +119,8 @@ export function InventoryPage() {
             { key: "product", header: t("common.product"), sortable: true, sortValue: (r) => r.productName, render: (r) => r.productName },
             { key: "type", header: t("common.type"), sortable: true, sortValue: (r) => r.type, render: (r) => <Badge variant="outline">{r.type}</Badge> },
             { key: "qty", header: t("common.quantity"), sortable: true, sortValue: (r) => r.quantity, render: (r) => r.quantity, className: "text-right" },
+            { key: "ucost", header: t("products.cost"), sortable: true, sortValue: (r) => r.unitCost ?? 0, render: (r) => r.unitCost != null ? formatCurrency(r.unitCost) : "—", className: "text-right" },
+            { key: "method", header: t("products.costingMethod"), render: (r) => r.costingMethod ? r.costingMethod.toUpperCase() : "—" },
             { key: "bal", header: t("inventory.balance"), sortable: true, sortValue: (r) => r.balanceAfter, render: (r) => r.balanceAfter, className: "text-right" },
             { key: "notes", header: t("common.notes"), render: (r) => r.notes ?? "—" },
           ]}

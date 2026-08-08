@@ -35,6 +35,7 @@ export function HrPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [status, setStatus] = useState<"active" | "inactive">("active");
   const [payEmpId, setPayEmpId] = useState("");
+  const [basic, setBasic] = useState("0");
   const [bonus, setBonus] = useState("0");
   const [allowance, setAllowance] = useState("0");
   const [deduction, setDeduction] = useState("0");
@@ -45,6 +46,7 @@ export function HrPage() {
   const startEditPay = (run: PayrollRun) => {
     setEditingPayId(run.id);
     setPayEmpId(run.employeeId);
+    setBasic(run.basic.toString());
     setBonus(run.bonus.toString());
     setAllowance(run.allowance.toString());
     setDeduction(run.deduction.toString());
@@ -53,6 +55,7 @@ export function HrPage() {
   const cancelEditPay = () => {
     setEditingPayId(null);
     setPayEmpId("");
+    setBasic("0");
     setBonus("0");
     setAllowance("0");
     setDeduction("0");
@@ -128,7 +131,7 @@ export function HrPage() {
       if (!emp) throw new Error(t("common.select"));
       
       const payload = {
-        basic: emp.salary,
+        basic: Number(basic) || emp.salary,
         bonus: Number(bonus) || 0,
         allowance: Number(allowance) || 0,
         deduction: Number(deduction) || 0,
@@ -264,20 +267,33 @@ export function HrPage() {
         </TabsContent>
         <TabsContent value="payroll" className="space-y-4">
           <Card>
-            <CardContent className="grid gap-3 pt-6 md:grid-cols-5">
+            <CardContent className="grid gap-3 pt-6 md:grid-cols-6">
               <div className="space-y-1.5 md:col-span-2">
                 <Label>{t("hr.employee")}</Label>
-                <select className="flex h-9 w-full rounded-md border bg-background px-3 text-sm" value={payEmpId} onChange={(e) => setPayEmpId(e.target.value)}>
+                <select
+                  className="flex h-9 w-full rounded-md border bg-background px-3 text-sm"
+                  value={payEmpId}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setPayEmpId(id);
+                    const emp = employees.find((x) => x.id === id);
+                    if (emp && !editingPayId) setBasic(String(emp.salary ?? 0));
+                  }}
+                >
                   <option value="">{t("common.select")}</option>
                   {employees.filter((e) => e.status === "active").map((e) => (
                     <option key={e.id} value={e.id}>{e.name}</option>
                   ))}
                 </select>
               </div>
+              <div className="space-y-1.5">
+                <Label>{t("hr.basicSalary")}</Label>
+                <Input type="number" min={0} step="0.01" value={basic} onChange={(e) => setBasic(e.target.value)} />
+              </div>
               <div className="space-y-1.5"><Label>{t("hr.bonus")}</Label><Input type="number" value={bonus} onChange={(e) => setBonus(e.target.value)} /></div>
               <div className="space-y-1.5"><Label>{t("hr.allowance")}</Label><Input type="number" value={allowance} onChange={(e) => setAllowance(e.target.value)} /></div>
               <div className="space-y-1.5"><Label>{t("hr.deduction")}</Label><Input type="number" value={deduction} onChange={(e) => setDeduction(e.target.value)} /></div>
-              <div className="md:col-span-5 flex justify-end gap-2">
+              <div className="md:col-span-6 flex justify-end gap-2">
                 {editingPayId && (
                   <Button variant="ghost" onClick={cancelEditPay}>{t("common.cancel")}</Button>
                 )}
@@ -294,7 +310,7 @@ export function HrPage() {
             columns={[
               { key: "month", header: t("hr.month"), sortable: true, sortValue: (r) => r.month, render: (r) => r.month },
               { key: "name", header: t("hr.employee"), sortable: true, sortValue: (r) => r.employeeName, render: (r) => r.employeeName },
-              { key: "basic", header: t("hr.basic"), sortable: true, sortValue: (r) => r.basic, render: (r) => formatCurrency(r.basic), className: "text-right" },
+              { key: "basic", header: t("hr.basicSalary"), sortable: true, sortValue: (r) => r.basic, render: (r) => formatCurrency(r.basic), className: "text-right" },
               { key: "net", header: t("hr.net"), sortable: true, sortValue: (r) => r.net, render: (r) => formatCurrency(r.net), className: "text-right" },
               { key: "st", header: t("common.status"), render: (r) => (
                 <Badge variant={r.status === "paid" ? "default" : "secondary"}>

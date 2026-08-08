@@ -18,6 +18,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AccountsTab } from "./AccountsTab";
 import { ChartOfAccountsTab } from "./ChartOfAccountsTab";
 import { AssetsTab } from "./AssetsTab";
+import { JournalEntryForm } from "./JournalEntryForm";
+import { isBankBookAccount, isCashBookAccount } from "@/lib/money-accounts";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -36,8 +38,9 @@ export function AccountingPage() {
   const { data: accounts = [] } = useQuery({ queryKey: ["accounts"], queryFn: accountingService.listAccounts });
   const { data: customers = [] } = useQuery({ queryKey: ["customers"], queryFn: customerService.list });
   const { data: suppliers = [] } = useQuery({ queryKey: ["suppliers"], queryFn: supplierService.list });
-  const { data: coa = [] } = useQuery({ queryKey: ["coa"], queryFn: accountingService.listCoa });
   const [open, setOpen] = useState(false);
+  const [journalOpen, setJournalOpen] = useState(true);
+  const [tab, setTab] = useState("journal");
   const [selectedBank, setSelectedBank] = useState<string>("all");
 
   const { register, handleSubmit, setValue, watch, reset, formState: { errors, isSubmitting } } = useForm<FormValues>({
@@ -45,7 +48,6 @@ export function AccountingPage() {
     defaultValues: { type: "payment", account: "cash", amount: 0, partyType: undefined, partyId: "", partyName: "", drAccount: "", crAccount: "", notes: "" },
   });
 
-  const voucherType = watch("type");
   const partyType = watch("partyType");
 
   const create = useMutation({
@@ -72,15 +74,25 @@ export function AccountingPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const cashBook = ledger.filter((e) => e.account === "cash");
-  const bankBook = ledger.filter((e) => e.account !== "cash" && (selectedBank === "all" || e.account === selectedBank));
+  const cashBook = ledger.filter((e) => isCashBookAccount(e.account, accounts));
+  const bankBook = ledger.filter((e) =>
+    isBankBookAccount(e.account, accounts) && (selectedBank === "all" || e.account === selectedBank),
+  );
+  const journals = vouchers.filter((v) => v.type === "journal");
 
   return (
     <div className="space-y-4">
       <PageHeader
         title={t("accounting.title")}
         description={t("accounting.desc")}
-        actions={<Button onClick={() => setOpen((v) => !v)}>{open ? t("common.close") : t("accounting.newVoucher")}</Button>}
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => { setTab("journal"); setJournalOpen((v) => !v); }}>
+              {journalOpen && tab === "journal" ? t("common.close") : t("accounting.postJournal")}
+            </Button>
+            <Button onClick={() => setOpen((v) => !v)}>{open ? t("common.close") : t("accounting.newVoucher")}</Button>
+          </div>
+        }
       />
 
       {open && (
@@ -94,52 +106,24 @@ export function AccountingPage() {
                   <SelectContent>
                     <SelectItem value="payment">{t("accounting.paymentVoucher")}</SelectItem>
                     <SelectItem value="receipt">{t("accounting.receiptVoucher")}</SelectItem>
-                    <SelectItem value="journal">{t("accounting.journalEntry")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              {voucherType === "journal" ? (
-                <>
-                  <div className="space-y-1.5">
-                    <Label>Dr. Account</Label>
-                    <Select value={watch("drAccount") || ""} onValueChange={(v) => setValue("drAccount", v)}>
-                      <SelectTrigger><SelectValue placeholder="Select Debit" /></SelectTrigger>
-                      <SelectContent>
-                        {coa.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
-                        <SelectItem value="cash">{t("common.cash")}</SelectItem>
-                        <SelectItem value="bank">{t("common.bank")}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Cr. Account</Label>
-                    <Select value={watch("crAccount") || ""} onValueChange={(v) => setValue("crAccount", v)}>
-                      <SelectTrigger><SelectValue placeholder="Select Credit" /></SelectTrigger>
-                      <SelectContent>
-                        {coa.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
-                        <SelectItem value="cash">{t("common.cash")}</SelectItem>
-                        <SelectItem value="bank">{t("common.bank")}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </>
-              ) : (
-                <div className="space-y-1.5">
-                  <Label>{t("common.account")}</Label>
-                  <Select value={watch("account")} onValueChange={(v) => setValue("account", v as FormValues["account"])}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="cash">{t("common.cash")}</SelectItem>
-                      <SelectItem value="bank">{t("common.bank")}</SelectItem>
-                      <SelectItem value="cheque">{t("common.cheque")}</SelectItem>
-                      <SelectItem value="mobile">{t("common.mobileBanking")}</SelectItem>
-                      {accounts.map(acc => (
-                        <SelectItem key={acc.id} value={acc.name}>{acc.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
+              <div className="space-y-1.5">
+                <Label>{t("common.account")}</Label>
+                <Select value={watch("account")} onValueChange={(v) => setValue("account", v as FormValues["account"])}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cash">{t("common.cash")}</SelectItem>
+                    <SelectItem value="bank">{t("common.bank")}</SelectItem>
+                    <SelectItem value="cheque">{t("common.cheque")}</SelectItem>
+                    <SelectItem value="mobile">{t("common.mobileBanking")}</SelectItem>
+                    {accounts.map(acc => (
+                      <SelectItem key={acc.id} value={acc.name}>{acc.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="space-y-1.5">
                 <Label>{t("common.amount")}</Label>
                 <Input type="number" step="0.01" {...register("amount")} />
@@ -205,15 +189,87 @@ export function AccountingPage() {
         </Card>
       )}
 
-      <Tabs defaultValue="vouchers">
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
+          <TabsTrigger value="journal">{t("accounting.journalEntry")}</TabsTrigger>
           <TabsTrigger value="vouchers">{t("accounting.vouchers")}</TabsTrigger>
           <TabsTrigger value="cash">{t("accounting.cashBook")}</TabsTrigger>
           <TabsTrigger value="bank">{t("accounting.bankBook")}</TabsTrigger>
           <TabsTrigger value="accounts">{t("accounting.accounts")}</TabsTrigger>
-          <TabsTrigger value="coa">Chart of Accounts</TabsTrigger>
-          <TabsTrigger value="assets">Assets</TabsTrigger>
+          <TabsTrigger value="coa">{t("accounting.coa")}</TabsTrigger>
+          <TabsTrigger value="assets">{t("accounting.assets")}</TabsTrigger>
         </TabsList>
+        <TabsContent value="journal" className="space-y-4">
+          {journalOpen && (
+            <Card>
+              <CardContent className="pt-6">
+                <JournalEntryForm />
+              </CardContent>
+            </Card>
+          )}
+          <DataTable<Voucher>
+            rows={journals}
+            searchKeys={["voucherNo", "notes", "drAccount", "crAccount"]}
+            dateKey="date"
+            empty={t("accounting.noJournals")}
+            columns={[
+              { key: "no", header: t("accounting.voucherNo"), sortable: true, sortValue: (r) => r.voucherNo, render: (r) => <span className="font-mono text-xs">{r.voucherNo}</span> },
+              { key: "date", header: t("common.date"), sortable: true, sortValue: (r) => r.date, render: (r) => formatDate(r.date) },
+              {
+                key: "account",
+                header: t("common.account"),
+                render: (r) => r.lines?.length
+                  ? r.lines.map((l) => l.accountName).filter(Boolean).join(" · ")
+                  : `Dr: ${r.drAccount ?? "—"} | Cr: ${r.crAccount ?? "—"}`,
+              },
+              { key: "amount", header: t("common.amount"), sortable: true, sortValue: (r) => r.amount, render: (r) => formatCurrency(r.amount), className: "text-right" },
+              { key: "notes", header: t("accounting.narration"), render: (r) => r.notes ?? "—" },
+              {
+                key: "actions",
+                header: t("common.actions"),
+                className: actionsColumnClass,
+                render: (r) => (
+                  <RowActions
+                    onDelete={() => {
+                      if (confirm(t("accounting.voidConfirm"))) removeVoucher.mutate(r.id);
+                    }}
+                    deleteDisabled={removeVoucher.isPending}
+                  />
+                ),
+              },
+            ]}
+            renderSubComponent={(r) => (
+              <div className="bg-muted/30 p-4 pl-12">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-muted-foreground">
+                      <th className="pb-2 font-medium">{t("common.account")}</th>
+                      <th className="pb-2 text-right font-medium">{t("accounting.debit")}</th>
+                      <th className="pb-2 text-right font-medium">{t("accounting.credit")}</th>
+                      <th className="pb-2 font-medium">{t("common.notes")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(r.lines?.length
+                      ? r.lines
+                      : [
+                          { accountId: "dr", accountName: r.drAccount || "—", debit: r.amount, credit: 0 },
+                          { accountId: "cr", accountName: r.crAccount || "—", debit: 0, credit: r.amount },
+                        ]
+                    ).map((line, i) => (
+                      <tr key={`${r.id}-${i}`} className="border-b last:border-0">
+                        <td className="py-2">{line.accountName}</td>
+                        <td className="py-2 text-right tabular-nums">{line.debit ? formatCurrency(line.debit) : "—"}</td>
+                        <td className="py-2 text-right tabular-nums">{line.credit ? formatCurrency(line.credit) : "—"}</td>
+                        <td className="py-2 text-muted-foreground">{line.notes ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          />
+        </TabsContent>
         <TabsContent value="vouchers">
           <DataTable<Voucher>
             rows={vouchers}
@@ -223,7 +279,9 @@ export function AccountingPage() {
               { key: "no", header: t("accounting.voucherNo"), sortable: true, sortValue: (r) => r.voucherNo, render: (r) => <span className="font-mono text-xs">{r.voucherNo}</span> },
               { key: "date", header: t("common.date"), sortable: true, sortValue: (r) => r.date, render: (r) => formatDate(r.date) },
               { key: "type", header: t("common.type"), sortable: true, sortValue: (r) => r.type, render: (r) => r.type },
-              { key: "account", header: t("common.account"), sortable: true, sortValue: (r) => r.account, render: (r) => r.type === "journal" ? `Dr: ${r.drAccount} | Cr: ${r.crAccount}` : r.account },
+              { key: "account", header: t("common.account"), sortable: true, sortValue: (r) => r.account, render: (r) => r.type === "journal"
+                ? (r.lines?.length ? r.lines.map((l) => l.accountName).join(" · ") : `Dr: ${r.drAccount ?? "—"} | Cr: ${r.crAccount ?? "—"}`)
+                : r.account },
               { key: "party", header: t("common.party"), render: (r) => r.partyName ?? "—" },
               { key: "amount", header: t("common.amount"), sortable: true, sortValue: (r) => r.amount, render: (r) => formatCurrency(r.amount), className: "text-right" },
               {

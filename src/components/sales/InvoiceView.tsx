@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table";
 import { PageHeader } from "@/components/common/PageHeader";
 import { BrandLogo } from "@/components/common/BrandLogo";
+import { PartyNameLink } from "@/components/common/PartyNameLink";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -87,6 +88,9 @@ export function InvoiceView({ id }: { id: string }) {
               </Button>
             )}
             <Button variant="outline" asChild>
+              <Link to="/customers/$id/statement" params={{ id: order.customerId }}>{t("customers.statement")}</Link>
+            </Button>
+            <Button variant="outline" asChild>
               <Link to="/deliveries/new" search={{ salesOrderId: order.id }}>{t("sales.createDelivery")}</Link>
             </Button>
             <Button variant="outline" onClick={() => window.print()}>{t("common.print")}</Button>
@@ -108,7 +112,9 @@ export function InvoiceView({ id }: { id: string }) {
           <div className="grid gap-4 md:grid-cols-2 text-sm">
             <div>
               <p className="text-xs uppercase text-muted-foreground">{t("sales.billTo")}</p>
-              <p className="font-medium">{order.customerName}</p>
+              <p className="font-medium">
+                <PartyNameLink kind="customer" id={order.customerId} name={order.customerName} />
+              </p>
             </div>
             <div>
               <p className="text-xs uppercase text-muted-foreground">{t("sales.invoiceNo")}</p>

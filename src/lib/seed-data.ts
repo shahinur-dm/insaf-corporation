@@ -1,7 +1,7 @@
 import type {
   Customer, Supplier, Product, Cylinder, CylinderMovement, SalesOrder, Delivery,
   Expense, LedgerEntry, PurchaseOrder, StockMovement, Voucher, Employee, PayrollRun,
-  Account, ChartOfAccount, BusinessAsset
+  Account, ChartOfAccount, BusinessAsset, CostLayer,
 } from "@/types";
 
 const iso = (d: Date) => d.toISOString();
@@ -25,13 +25,22 @@ export const seedSuppliers: Supplier[] = [
 ];
 
 export const seedProducts: Product[] = [
-  { id: "p1", code: "LPG-12", name: "LPG Domestic 12kg", category: "LPG", uom: "cyl", price: 1450, cost: 1200, taxRate: 5, stock: 65, reorderLevel: 25, createdAt: daysAgo(120) },
-  { id: "p2", code: "LPG-35", name: "LPG Commercial 35kg", category: "LPG", uom: "cyl", price: 4200, cost: 3600, taxRate: 5, stock: 12, reorderLevel: 15, createdAt: daysAgo(120) },
-  { id: "p3", code: "LPG-45", name: "LPG Commercial 45kg", category: "LPG", uom: "cyl", price: 5350, cost: 4600, taxRate: 5, stock: 28, reorderLevel: 12, createdAt: daysAgo(120) },
-  { id: "p4", code: "OXY-D", name: "Medical Oxygen D-Type", category: "Medical", uom: "cyl", price: 850, cost: 620, taxRate: 12, stock: 34, reorderLevel: 15, createdAt: daysAgo(120) },
-  { id: "p5", code: "N2-B", name: "Nitrogen Industrial", category: "Industrial", uom: "cyl", price: 1150, cost: 880, taxRate: 15, stock: 6, reorderLevel: 10, createdAt: daysAgo(120) },
-  { id: "p6", code: "CO2-B", name: "Carbon Dioxide", category: "Industrial", uom: "cyl", price: 980, cost: 750, taxRate: 15, stock: 22, reorderLevel: 10, createdAt: daysAgo(120) },
+  { id: "p1", code: "LPG-12", name: "LPG Domestic 12kg", category: "LPG", uom: "cyl", price: 1450, cost: 1200, taxRate: 5, stock: 65, reorderLevel: 25, incomeAccountId: "coa1", expenseAccountId: "coa8", costingMethod: "fifo", createdAt: daysAgo(120) },
+  { id: "p2", code: "LPG-35", name: "LPG Commercial 35kg", category: "LPG", uom: "cyl", price: 4200, cost: 3600, taxRate: 5, stock: 12, reorderLevel: 15, incomeAccountId: "coa1", expenseAccountId: "coa8", costingMethod: "fifo", createdAt: daysAgo(120) },
+  { id: "p3", code: "LPG-45", name: "LPG Commercial 45kg", category: "LPG", uom: "cyl", price: 5350, cost: 4600, taxRate: 5, stock: 28, reorderLevel: 12, incomeAccountId: "coa1", expenseAccountId: "coa8", costingMethod: "lifo", createdAt: daysAgo(120) },
+  { id: "p4", code: "OXY-D", name: "Medical Oxygen D-Type", category: "Medical", uom: "cyl", price: 850, cost: 620, taxRate: 12, stock: 34, reorderLevel: 15, incomeAccountId: "coa1", expenseAccountId: "coa8", costingMethod: "average", createdAt: daysAgo(120) },
+  { id: "p5", code: "N2-B", name: "Nitrogen Industrial", category: "Industrial", uom: "cyl", price: 1150, cost: 880, taxRate: 15, stock: 6, reorderLevel: 10, incomeAccountId: "coa1", expenseAccountId: "coa8", costingMethod: "fifo", createdAt: daysAgo(120) },
+  { id: "p6", code: "CO2-B", name: "Carbon Dioxide", category: "Industrial", uom: "cyl", price: 980, cost: 750, taxRate: 15, stock: 22, reorderLevel: 10, incomeAccountId: "coa1", expenseAccountId: "coa8", costingMethod: "average", createdAt: daysAgo(120) },
 ];
+
+export const seedCostLayers: CostLayer[] = seedProducts.map((p) => ({
+  id: `cl-${p.id}`,
+  productId: p.id,
+  qtyRemaining: p.stock,
+  unitCost: p.cost ?? 0,
+  receivedAt: p.createdAt,
+  refType: "adjustment" as const,
+}));
 
 export const seedCylinders: Cylinder[] = [
   { id: "cy1", serialNumber: "INS-BD-00001", productId: "p1", capacity: 12, status: "in_stock", location: "Warehouse Dhaka-A", lastMovementAt: daysAgo(2), createdAt: daysAgo(200) },
@@ -43,9 +52,10 @@ export const seedCylinders: Cylinder[] = [
 ];
 
 export const seedMovements: CylinderMovement[] = [
+  { id: "m0", cylinderId: "cy1", type: "received", fromLocation: "Bashundhara Plant", toLocation: "Warehouse Dhaka-A", supplierId: "s1", timestamp: daysAgo(12), by: "Warehouse" },
   { id: "m1", cylinderId: "cy2", type: "issued", fromLocation: "Warehouse Dhaka-A", toLocation: "Padma Steel Mills", customerId: "c1", timestamp: daysAgo(4), by: "Karim Uddin" },
   { id: "m2", cylinderId: "cy3", type: "issued", fromLocation: "Warehouse Dhaka-A", toLocation: "Van DHK-METRO-GA-1122", timestamp: daysAgo(1), by: "Karim Uddin" },
-  { id: "m3", cylinderId: "cy4", type: "returned", fromLocation: "Cooper's Bakery", toLocation: "Bashundhara Plant", timestamp: daysAgo(3), by: "Jahangir Alam" },
+  { id: "m3", cylinderId: "cy4", type: "returned", fromLocation: "Cooper's Bakery", toLocation: "Bashundhara Plant", customerId: "c4", supplierId: "s1", timestamp: daysAgo(3), by: "Jahangir Alam" },
   { id: "m4", cylinderId: "cy6", type: "issued", fromLocation: "Warehouse Dhaka-A", toLocation: "Square Hospital", customerId: "c2", timestamp: daysAgo(5), by: "Karim Uddin" },
 ];
 
@@ -109,6 +119,8 @@ export const seedLedger: LedgerEntry[] = [
   { id: "l6", date: daysAgo(1), account: "cash", direction: "out", amount: 3200, category: "expense", refType: "expense", refId: "e3", notes: "Cylinder valve kit" },
   { id: "l7", date: daysAgo(2), account: "cash", direction: "out", amount: 5000, category: "expense", refType: "expense", refId: "e4", notes: "Driver advance" },
   { id: "l8", date: daysAgo(1), account: "bank", direction: "out", amount: 50000, category: "purchase", refType: "purchase", refId: "po1", notes: "PO-2026-0001 part payment" },
+  { id: "l9", date: daysAgo(2), account: "Salary Expense", direction: "in", amount: 35000, category: "journal", refType: "voucher", refId: "v3", notes: "JV-2026-0001" },
+  { id: "l10", date: daysAgo(2), account: "bank", direction: "out", amount: 35000, category: "journal", refType: "voucher", refId: "v3", notes: "JV-2026-0001" },
 ];
 
 export const seedPurchases: PurchaseOrder[] = [
@@ -134,6 +146,15 @@ export const seedStockMovements: StockMovement[] = [
 export const seedVouchers: Voucher[] = [
   { id: "v1", voucherNo: "RV-2026-0001", type: "receipt", date: daysAgo(0), account: "cash", amount: 35280, partyName: "Padma Steel Mills Ltd", notes: "SO collection", createdAt: daysAgo(0) },
   { id: "v2", voucherNo: "PV-2026-0001", type: "payment", date: daysAgo(1), account: "bank", amount: 50000, partyName: "Bashundhara LP Gas Ltd", notes: "Supplier payment", createdAt: daysAgo(1) },
+  {
+    id: "v3", voucherNo: "JV-2026-0001", type: "journal", date: daysAgo(2), account: "Salary Expense", amount: 35000,
+    drAccount: "Salary Expense", crAccount: "bank", notes: "Salary payment",
+    lines: [
+      { accountId: "coa3", accountName: "Salary Expense", debit: 35000, credit: 0 },
+      { accountId: "bank", accountName: "bank", debit: 0, credit: 35000 },
+    ],
+    createdAt: daysAgo(2),
+  },
 ];
 
 export const seedEmployees: Employee[] = [
@@ -181,6 +202,8 @@ export const seedChartOfAccounts: ChartOfAccount[] = [
   { id: "coa5", name: "Transport Fuel", type: "Expense", code: "EXP-03", createdAt: daysAgo(200) },
   { id: "coa6", name: "Warehouse Equipment", type: "Asset", code: "AST-01", createdAt: daysAgo(200) },
   { id: "coa7", name: "Bank Loan", type: "Liability", code: "LIA-01", createdAt: daysAgo(200) },
+  { id: "coa8", name: "Cost of Goods Sold", type: "Expense", code: "EXP-04", createdAt: daysAgo(200) },
+  { id: "coa9", name: "Inventory Asset", type: "Asset", code: "AST-02", createdAt: daysAgo(200) },
 ];
 
 export const seedAssets: BusinessAsset[] = [
@@ -208,4 +231,5 @@ export const allSeed = {
   accounts: seedAccounts,
   chartOfAccounts: seedChartOfAccounts,
   assets: seedAssets,
+  costLayers: seedCostLayers,
 };

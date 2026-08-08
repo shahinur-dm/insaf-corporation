@@ -24,6 +24,7 @@ export interface Supplier {
 
 export type ProductCategory = "LPG" | "Industrial" | "Medical" | "Other";
 export type UnitOfMeasure = "kg" | "cyl" | "ltr" | "pcs";
+export type CostingMethod = "fifo" | "lifo" | "average";
 
 export interface Product {
   id: ID;
@@ -33,10 +34,33 @@ export interface Product {
   uom: UnitOfMeasure;
   price: number;
   cost?: number;
+  /** Compressed data-URL or remote URL */
+  image?: string;
   taxRate: number;
   stock: number;
   reorderLevel: number;
+  /** Chart of Accounts — Income (sales revenue) */
+  incomeAccountId?: ID;
+  /** Chart of Accounts — Expense / COGS */
+  expenseAccountId?: ID;
+  costingMethod?: CostingMethod;
   createdAt: string;
+}
+
+export interface CostLayer {
+  id: ID;
+  productId: ID;
+  qtyRemaining: number;
+  unitCost: number;
+  receivedAt: string;
+  refType?: StockMovement["refType"];
+  refId?: ID;
+}
+
+export interface LayerConsumption {
+  layerId: string;
+  qty: number;
+  unitCost: number;
 }
 
 export type CylinderStatus = "in_stock" | "at_customer" | "in_transit" | "refilling" | "damaged" | "lost";
@@ -69,6 +93,7 @@ export interface CylinderMovement {
   fromLocation?: string;
   toLocation?: string;
   customerId?: ID;
+  supplierId?: ID;
   notes?: string;
   timestamp: string;
   by: string;
@@ -143,6 +168,10 @@ export interface StockMovement {
   type: StockMovementType;
   quantity: number;
   balanceAfter: number;
+  unitCost?: number;
+  cogsAmount?: number;
+  costingMethod?: CostingMethod;
+  consumptions?: LayerConsumption[];
   refType?: "sales" | "purchase" | "delivery" | "adjustment";
   refId?: string;
   notes?: string;
@@ -215,6 +244,14 @@ export interface LedgerEntry {
 
 export type VoucherType = "payment" | "receipt" | "journal";
 
+export interface JournalLine {
+  accountId: string;
+  accountName: string;
+  debit: number;
+  credit: number;
+  notes?: string;
+}
+
 export interface Voucher {
   id: ID;
   voucherNo: string;
@@ -227,6 +264,7 @@ export interface Voucher {
   partyName?: string;
   drAccount?: string;
   crAccount?: string;
+  lines?: JournalLine[];
   notes?: string;
   createdAt: string;
 }

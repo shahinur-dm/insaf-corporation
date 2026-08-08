@@ -4,14 +4,15 @@ import { allSeed } from "./seed-data";
 import { requireUser } from "./session.server";
 import type {
   Customer, Supplier, Product, SalesOrder, DashboardStats, StockAlert,
-  Expense, LedgerEntry, Cylinder, PurchaseOrder,
+  Expense, LedgerEntry, Cylinder, PurchaseOrder, Voucher, Account,
 } from "@/types";
+import { isBankBookAccount, isCashBookAccount } from "@/lib/money-accounts";
 
 type CollName =
   | "customers" | "suppliers" | "products" | "cylinders" | "movements"
   | "sales" | "deliveries" | "expenses" | "ledger"
   | "purchases" | "stockMovements" | "vouchers" | "employees" | "payroll"
-  | "appUsers" | "accounts" | "chartOfAccounts" | "assets";
+  | "appUsers" | "accounts" | "chartOfAccounts" | "assets" | "costLayers";
 
 // Strip Mongo's _id so returned docs are plain and serializable.
 const clean = <T,>(doc: any): T => {
@@ -115,9 +116,9 @@ function dhakaDay(d: Date) {
   return shifted.toISOString().slice(0, 10);
 }
 
-function balanceFor(ledger: LedgerEntry[], account: "cash" | "bank") {
+function balanceFor(ledger: LedgerEntry[], account: "cash" | "bank", named: Account[] = []) {
   return ledger
-    .filter((e) => account === "bank" ? e.account !== "cash" : e.account === "cash")
+    .filter((e) => (account === "bank" ? isBankBookAccount(e.account, named) : isCashBookAccount(e.account, named)))
     .reduce((a, e) => a + (e.direction === "in" ? e.amount : -e.amount), 0);
 }
 
@@ -166,6 +167,7 @@ export const dashboardFn = createServerFn({ method: "GET" }).handler(async (): P
   const todayExpense = todaysExpenses.reduce((a, e) => a + (e.amount || 0), 0);
 
   const vouchers = (await db.collection("vouchers").find({}).toArray()) as unknown as Voucher[];
+  const namedAccounts = (await db.collection("accounts").find({}).toArray()) as unknown as Account[];
 
   const customerDue =
     sales.reduce((a, o) => a + Math.max(0, (o.total || 0) - (o.paid || 0)), 0) +
@@ -196,8 +198,8 @@ export const dashboardFn = createServerFn({ method: "GET" }).handler(async (): P
     todayExpense,
     customerDue,
     supplierPayable,
-    cashBalance: Math.round(balanceFor(ledger, "cash")),
-    bankBalance: Math.round(balanceFor(ledger, "bank")),
+    cashBalance: Math.round(balanceFor(ledger, "cash", namedAccounts)),
+    bankBalance: Math.round(balanceFor(ledger, "bank", namedAccounts)),
     availableStock: products.reduce((a, p) => a + (p.stock || 0), 0),
     cylindersInWarehouse: countStatus("in_stock"),
     cylindersWithCustomers: countStatus("at_customer"),

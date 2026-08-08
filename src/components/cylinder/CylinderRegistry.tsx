@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
@@ -8,8 +9,11 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/common/PageHeader";
 import { DataTable } from "@/components/common/DataTable";
 import { RowActions, actionsColumnClass } from "@/components/common/RowActions";
+import { DateRangeFilter } from "@/components/common/DateRangeFilter";
+import { CylinderLedger } from "@/components/cylinder/CylinderLedger";
 import { formatDateTime } from "@/utils/formatters";
 import type { Cylinder, CylinderStatus } from "@/types";
+import { EMPTY_DATE_RANGE, type DateRange } from "@/lib/date-range";
 import { useT } from "@/i18n";
 
 const statusVariant: Record<CylinderStatus, "default" | "secondary" | "destructive" | "outline"> = {
@@ -21,6 +25,8 @@ export function CylinderRegistry() {
   const t = useT();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const [tab, setTab] = useState<"registry" | "tracking">("tracking");
+  const [range, setRange] = useState<DateRange>(EMPTY_DATE_RANGE);
   const { data = [] } = useQuery({ queryKey: ["cylinders"], queryFn: cylinderService.list });
 
   const remove = useMutation({
@@ -39,6 +45,23 @@ export function CylinderRegistry() {
         description={t("cylinders.desc")}
         actions={<Button asChild><Link to="/cylinders/new"><Plus className="mr-1 h-4 w-4" /> {t("cylinders.new")}</Link></Button>}
       />
+      <div className="mb-4 flex flex-wrap gap-2">
+        <Button size="sm" variant={tab === "tracking" ? "default" : "outline"} onClick={() => setTab("tracking")}>
+          {t("cylinders.trackingTab")}
+        </Button>
+        <Button size="sm" variant={tab === "registry" ? "default" : "outline"} onClick={() => setTab("registry")}>
+          {t("cylinders.registryTab")}
+        </Button>
+      </div>
+      {tab === "tracking" && (
+        <div className="space-y-4">
+          <div className="rounded-xl border bg-card/60 p-3">
+            <DateRangeFilter value={range} onChange={setRange} />
+          </div>
+          <CylinderLedger range={range} />
+        </div>
+      )}
+      {tab === "registry" && (
       <DataTable<Cylinder>
         rows={data}
         searchKeys={["serialNumber", "location"]}
@@ -67,6 +90,7 @@ export function CylinderRegistry() {
           },
         ]}
       />
+      )}
     </div>
   );
 }

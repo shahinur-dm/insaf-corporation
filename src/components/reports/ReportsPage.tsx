@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { salesService } from "@/services/sales.service";
 import { purchaseService } from "@/services/purchase.service";
 import { productService } from "@/services/product.service";
-import { cylinderService } from "@/services/cylinder.service";
 import { expenseService } from "@/services/expense.service";
 import { accountingService } from "@/services/accounting.service";
 import { deliveryService } from "@/services/delivery.service";
@@ -12,6 +11,9 @@ import { supplierService } from "@/services/supplier.service";
 import { PageHeader } from "@/components/common/PageHeader";
 import { DataTable } from "@/components/common/DataTable";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
+import { PartyNameLink } from "@/components/common/PartyNameLink";
+import { StockReport } from "@/components/reports/StockReport";
+import { CylinderLedger } from "@/components/cylinder/CylinderLedger";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDate } from "@/utils/formatters";
@@ -38,7 +40,6 @@ export function ReportsPage() {
   const { data: salesRaw = [] } = useQuery({ queryKey: ["sales"], queryFn: salesService.list });
   const { data: purchasesRaw = [] } = useQuery({ queryKey: ["purchases"], queryFn: purchaseService.list });
   const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: productService.list });
-  const { data: cylinders = [] } = useQuery({ queryKey: ["cylinders"], queryFn: cylinderService.list });
   const { data: expensesRaw = [] } = useQuery({ queryKey: ["expenses"], queryFn: expenseService.list });
   const { data: ledgerRaw = [] } = useQuery({ queryKey: ["ledger"], queryFn: accountingService.listLedger });
   const { data: deliveriesRaw = [] } = useQuery({ queryKey: ["deliveries"], queryFn: deliveryService.list });
@@ -278,7 +279,7 @@ export function ReportsPage() {
               columns={[
                 { key: "no", header: t("sales.orderNo"), render: (r) => r.orderNo },
                 { key: "date", header: t("common.date"), render: (r) => formatDate(r.date) },
-                { key: "cust", header: t("common.customer"), render: (r) => r.customerName },
+                { key: "cust", header: t("common.customer"), render: (r) => <PartyNameLink kind="customer" id={r.customerId} name={r.customerName} /> },
                 { key: "total", header: t("common.total"), render: (r) => formatCurrency(r.total), className: "text-right" },
                 { key: "st", header: t("common.status"), render: (r) => r.status },
               ]}
@@ -291,41 +292,20 @@ export function ReportsPage() {
               columns={[
                 { key: "no", header: t("purchases.poNo"), render: (r) => r.orderNo },
                 { key: "date", header: t("common.date"), render: (r) => formatDate(r.date) },
-                { key: "sup", header: t("common.supplier"), render: (r) => r.supplierName },
+                { key: "sup", header: t("common.supplier"), render: (r) => <PartyNameLink kind="supplier" id={r.supplierId} name={r.supplierName} /> },
                 { key: "total", header: t("common.total"), render: (r) => formatCurrency(r.total), className: "text-right" },
                 { key: "st", header: t("common.status"), render: (r) => r.status },
               ]}
             />
           )}
-          {active === "stock" && (
-            <DataTable
-              rows={products}
-              searchKeys={["name", "code"]}
-              columns={[
-                { key: "code", header: t("products.code"), render: (r) => r.code },
-                { key: "name", header: t("common.product"), render: (r) => r.name },
-                { key: "stock", header: t("products.stock"), render: (r) => r.stock, className: "text-right" },
-                { key: "reorder", header: t("products.reorder"), render: (r) => r.reorderLevel, className: "text-right" },
-              ]}
-            />
-          )}
-          {active === "cylinder" && (
-            <DataTable
-              rows={cylinders}
-              searchKeys={["serialNumber", "location"]}
-              columns={[
-                { key: "sn", header: t("cylinders.serial"), render: (r) => r.serialNumber },
-                { key: "st", header: t("common.status"), render: (r) => r.status },
-                { key: "loc", header: t("cylinders.location"), render: (r) => r.location },
-              ]}
-            />
-          )}
+          {active === "stock" && <StockReport range={range} />}
+          {active === "cylinder" && <CylinderLedger range={range} />}
           {active === "ar" && (
             <DataTable
               rows={arRows}
               searchKeys={["customerName"]}
               columns={[
-                { key: "cust", header: t("common.customer"), render: (r) => <span className="font-medium">{r.customerName}</span> },
+                { key: "cust", header: t("common.customer"), render: (r) => <PartyNameLink kind="customer" id={r.id} name={r.customerName} /> },
                 { key: "orders", header: t("sales.title"), render: (r) => <span className="text-muted-foreground text-sm">{r.orders.length} {t("sales.title")}</span> },
                 { key: "due", header: t("common.due"), render: (r) => <span className="font-medium">{formatCurrency(r.due)}</span>, className: "text-right" },
               ]}
@@ -358,7 +338,7 @@ export function ReportsPage() {
               rows={apRows}
               searchKeys={["supplierName"]}
               columns={[
-                { key: "sup", header: t("common.supplier"), render: (r) => <span className="font-medium">{r.supplierName}</span> },
+                { key: "sup", header: t("common.supplier"), render: (r) => <PartyNameLink kind="supplier" id={r.id} name={r.supplierName} /> },
                 { key: "orders", header: t("purchases.title"), render: (r) => <span className="text-muted-foreground text-sm">{r.orders.length} {t("purchases.title")}</span> },
                 { key: "due", header: t("common.due"), render: (r) => <span className="font-medium">{formatCurrency(r.due)}</span>, className: "text-right" },
               ]}

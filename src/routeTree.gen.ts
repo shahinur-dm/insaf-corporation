@@ -39,12 +39,14 @@ import { Route as CylindersNewRouteImport } from './routes/cylinders.new'
 import { Route as CylindersIdRouteImport } from './routes/cylinders.$id'
 import { Route as CustomersNewRouteImport } from './routes/customers.new'
 import { Route as CustomersIdRouteImport } from './routes/customers.$id'
+import { Route as SuppliersIdStatementRouteImport } from './routes/suppliers.$id.statement'
 import { Route as SuppliersIdEditRouteImport } from './routes/suppliers.$id.edit'
 import { Route as SalesIdEditRouteImport } from './routes/sales.$id.edit'
 import { Route as PurchasesIdEditRouteImport } from './routes/purchases.$id.edit'
 import { Route as ProductsIdEditRouteImport } from './routes/products.$id.edit'
 import { Route as DeliveriesIdEditRouteImport } from './routes/deliveries.$id.edit'
 import { Route as CylindersIdEditRouteImport } from './routes/cylinders.$id.edit'
+import { Route as CustomersIdStatementRouteImport } from './routes/customers.$id.statement'
 import { Route as CustomersIdEditRouteImport } from './routes/customers.$id.edit'
 
 const SettingsRoute = SettingsRouteImport.update({
@@ -197,6 +199,11 @@ const CustomersIdRoute = CustomersIdRouteImport.update({
   path: '/customers/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SuppliersIdStatementRoute = SuppliersIdStatementRouteImport.update({
+  id: '/statement',
+  path: '/statement',
+  getParentRoute: () => SuppliersIdRoute,
+} as any)
 const SuppliersIdEditRoute = SuppliersIdEditRouteImport.update({
   id: '/edit',
   path: '/edit',
@@ -226,6 +233,11 @@ const CylindersIdEditRoute = CylindersIdEditRouteImport.update({
   id: '/edit',
   path: '/edit',
   getParentRoute: () => CylindersIdRoute,
+} as any)
+const CustomersIdStatementRoute = CustomersIdStatementRouteImport.update({
+  id: '/statement',
+  path: '/statement',
+  getParentRoute: () => CustomersIdRoute,
 } as any)
 const CustomersIdEditRoute = CustomersIdEditRouteImport.update({
   id: '/edit',
@@ -265,12 +277,14 @@ export interface FileRoutesByFullPath {
   '/sales/': typeof SalesIndexRoute
   '/suppliers/': typeof SuppliersIndexRoute
   '/customers/$id/edit': typeof CustomersIdEditRoute
+  '/customers/$id/statement': typeof CustomersIdStatementRoute
   '/cylinders/$id/edit': typeof CylindersIdEditRoute
   '/deliveries/$id/edit': typeof DeliveriesIdEditRoute
   '/products/$id/edit': typeof ProductsIdEditRoute
   '/purchases/$id/edit': typeof PurchasesIdEditRoute
   '/sales/$id/edit': typeof SalesIdEditRoute
   '/suppliers/$id/edit': typeof SuppliersIdEditRoute
+  '/suppliers/$id/statement': typeof SuppliersIdStatementRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -304,12 +318,14 @@ export interface FileRoutesByTo {
   '/sales': typeof SalesIndexRoute
   '/suppliers': typeof SuppliersIndexRoute
   '/customers/$id/edit': typeof CustomersIdEditRoute
+  '/customers/$id/statement': typeof CustomersIdStatementRoute
   '/cylinders/$id/edit': typeof CylindersIdEditRoute
   '/deliveries/$id/edit': typeof DeliveriesIdEditRoute
   '/products/$id/edit': typeof ProductsIdEditRoute
   '/purchases/$id/edit': typeof PurchasesIdEditRoute
   '/sales/$id/edit': typeof SalesIdEditRoute
   '/suppliers/$id/edit': typeof SuppliersIdEditRoute
+  '/suppliers/$id/statement': typeof SuppliersIdStatementRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -344,12 +360,14 @@ export interface FileRoutesById {
   '/sales/': typeof SalesIndexRoute
   '/suppliers/': typeof SuppliersIndexRoute
   '/customers/$id/edit': typeof CustomersIdEditRoute
+  '/customers/$id/statement': typeof CustomersIdStatementRoute
   '/cylinders/$id/edit': typeof CylindersIdEditRoute
   '/deliveries/$id/edit': typeof DeliveriesIdEditRoute
   '/products/$id/edit': typeof ProductsIdEditRoute
   '/purchases/$id/edit': typeof PurchasesIdEditRoute
   '/sales/$id/edit': typeof SalesIdEditRoute
   '/suppliers/$id/edit': typeof SuppliersIdEditRoute
+  '/suppliers/$id/statement': typeof SuppliersIdStatementRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -385,12 +403,14 @@ export interface FileRouteTypes {
     | '/sales/'
     | '/suppliers/'
     | '/customers/$id/edit'
+    | '/customers/$id/statement'
     | '/cylinders/$id/edit'
     | '/deliveries/$id/edit'
     | '/products/$id/edit'
     | '/purchases/$id/edit'
     | '/sales/$id/edit'
     | '/suppliers/$id/edit'
+    | '/suppliers/$id/statement'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -424,12 +444,14 @@ export interface FileRouteTypes {
     | '/sales'
     | '/suppliers'
     | '/customers/$id/edit'
+    | '/customers/$id/statement'
     | '/cylinders/$id/edit'
     | '/deliveries/$id/edit'
     | '/products/$id/edit'
     | '/purchases/$id/edit'
     | '/sales/$id/edit'
     | '/suppliers/$id/edit'
+    | '/suppliers/$id/statement'
   id:
     | '__root__'
     | '/'
@@ -463,12 +485,14 @@ export interface FileRouteTypes {
     | '/sales/'
     | '/suppliers/'
     | '/customers/$id/edit'
+    | '/customers/$id/statement'
     | '/cylinders/$id/edit'
     | '/deliveries/$id/edit'
     | '/products/$id/edit'
     | '/purchases/$id/edit'
     | '/sales/$id/edit'
     | '/suppliers/$id/edit'
+    | '/suppliers/$id/statement'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -716,6 +740,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CustomersIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/suppliers/$id/statement': {
+      id: '/suppliers/$id/statement'
+      path: '/statement'
+      fullPath: '/suppliers/$id/statement'
+      preLoaderRoute: typeof SuppliersIdStatementRouteImport
+      parentRoute: typeof SuppliersIdRoute
+    }
     '/suppliers/$id/edit': {
       id: '/suppliers/$id/edit'
       path: '/edit'
@@ -758,6 +789,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CylindersIdEditRouteImport
       parentRoute: typeof CylindersIdRoute
     }
+    '/customers/$id/statement': {
+      id: '/customers/$id/statement'
+      path: '/statement'
+      fullPath: '/customers/$id/statement'
+      preLoaderRoute: typeof CustomersIdStatementRouteImport
+      parentRoute: typeof CustomersIdRoute
+    }
     '/customers/$id/edit': {
       id: '/customers/$id/edit'
       path: '/edit'
@@ -770,10 +808,12 @@ declare module '@tanstack/react-router' {
 
 interface CustomersIdRouteChildren {
   CustomersIdEditRoute: typeof CustomersIdEditRoute
+  CustomersIdStatementRoute: typeof CustomersIdStatementRoute
 }
 
 const CustomersIdRouteChildren: CustomersIdRouteChildren = {
   CustomersIdEditRoute: CustomersIdEditRoute,
+  CustomersIdStatementRoute: CustomersIdStatementRoute,
 }
 
 const CustomersIdRouteWithChildren = CustomersIdRoute._addFileChildren(
@@ -841,10 +881,12 @@ const SalesIdRouteWithChildren =
 
 interface SuppliersIdRouteChildren {
   SuppliersIdEditRoute: typeof SuppliersIdEditRoute
+  SuppliersIdStatementRoute: typeof SuppliersIdStatementRoute
 }
 
 const SuppliersIdRouteChildren: SuppliersIdRouteChildren = {
   SuppliersIdEditRoute: SuppliersIdEditRoute,
+  SuppliersIdStatementRoute: SuppliersIdStatementRoute,
 }
 
 const SuppliersIdRouteWithChildren = SuppliersIdRoute._addFileChildren(

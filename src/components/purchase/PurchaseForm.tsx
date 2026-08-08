@@ -6,7 +6,6 @@ import { Trash2, Plus } from "lucide-react";
 import { supplierService } from "@/services/supplier.service";
 import { productService } from "@/services/product.service";
 import { purchaseService } from "@/services/purchase.service";
-import { cylinderService } from "@/services/cylinder.service";
 import { computeTotals, genOrderNo } from "@/utils/helpers";
 import { formatCurrency } from "@/utils/formatters";
 import { purchaseOrderSchema } from "@/utils/validators";
@@ -31,7 +30,6 @@ export function PurchaseForm({ id }: { id?: string }) {
   const editing = Boolean(id);
   const { data: suppliers = [] } = useQuery({ queryKey: ["suppliers"], queryFn: supplierService.list });
   const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: productService.list });
-  const { data: cylinders = [] } = useQuery({ queryKey: ["cylinders"], queryFn: cylinderService.list });
   const { data: existing, isLoading } = useQuery({
     queryKey: ["purchases", id],
     queryFn: () => purchaseService.get(id!),
@@ -40,18 +38,14 @@ export function PurchaseForm({ id }: { id?: string }) {
 
   const [supplierId, setSupplierId] = useState("");
   const [notes, setNotes] = useState("");
-  const [items, setItems] = useState<(LineItem & { cylinderSerials?: string })[]>([]);
+  const [items, setItems] = useState<LineItem[]>([]);
   const [hydrated, setHydrated] = useState(!editing);
 
   useEffect(() => {
     if (!existing) return;
     setSupplierId(existing.supplierId);
     setNotes(existing.notes ?? "");
-    setItems(existing.items.map(it => {
-      const cids = it.cylinderIds || [];
-      const serials = cylinders.filter(c => cids.includes(c.id)).map(c => c.serialNumber).join(", ");
-      return { ...it, cylinderSerials: serials };
-    }));
+    setItems(existing.items.map((it) => ({ ...it })));
     setHydrated(true);
   }, [existing]);
 
@@ -64,7 +58,7 @@ export function PurchaseForm({ id }: { id?: string }) {
     }]);
   };
 
-  const update = (idx: number, patch: Partial<LineItem & { cylinderSerials?: string }>) => {
+  const update = (idx: number, patch: Partial<LineItem>) => {
     setItems(items.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
   };
 
@@ -72,31 +66,7 @@ export function PurchaseForm({ id }: { id?: string }) {
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const finalItems: any[] = [];
-      for (const it of items) {
-        let cylinderIds: string[] = [];
-        if (it.cylinderSerials) {
-          const serials = it.cylinderSerials.split(",").map(s => s.trim()).filter(Boolean);
-          for (const s of serials) {
-            let found = cylinders.find(c => c.serialNumber === s);
-            if (!found) {
-              found = await cylinderService.create({
-                serialNumber: s,
-                productId: it.productId,
-                capacity: 0,
-                status: "in_transit",
-                location: "Supplier",
-              });
-            } else {
-              if (found.productId !== it.productId) throw new Error(`Cylinder ${s} does not match product ${it.productName}`);
-            }
-            cylinderIds.push(found.id);
-          }
-        }
-        finalItems.push({ ...it, cylinderIds });
-      }
-
-      const parsed = purchaseOrderSchema.safeParse({ supplierId, notes, items: finalItems });
+      const parsed = purchaseOrderSchema.safeParse({ supplierId, notes, items });
       if (!parsed.success) throw new Error(parsed.error.errors[0]?.message || "Invalid form");
       const supplier = suppliers.find((s) => s.id === supplierId);
       if (!supplier) throw new Error(t("common.select"));
@@ -108,7 +78,7 @@ export function PurchaseForm({ id }: { id?: string }) {
         return purchaseService.update(id!, {
           supplierId,
           supplierName: supplier.name,
-          items: finalItems,
+          items,
           subtotal: totals.subtotal,
           tax: totals.tax,
           total: totals.total,
@@ -120,7 +90,7 @@ export function PurchaseForm({ id }: { id?: string }) {
         orderNo: genOrderNo("PO"),
         supplierId, supplierName: supplier.name,
         date: new Date().toISOString(),
-        items: finalItems, subtotal: totals.subtotal, tax: totals.tax, total: totals.total,
+        items, subtotal: totals.subtotal, tax: totals.tax, total: totals.total,
         paid: 0, status: "ordered", notes,
       });
     },
@@ -170,14 +140,13 @@ export function PurchaseForm({ id }: { id?: string }) {
             <Table>
               <TableHeader><TableRow>
                 <TableHead>{t("common.product")}</TableHead>
-                <TableHead>Cylinder Serials</TableHead>
                 <TableHead className="w-24 text-right">{t("common.quantity")}</TableHead>
                 <TableHead className="w-32 text-right">{t("purchases.cost")}</TableHead><TableHead className="w-24 text-right">{t("products.taxPct")}</TableHead>
                 <TableHead className="w-32 text-right">{t("common.lineTotal")}</TableHead><TableHead className="w-10" />
               </TableRow></TableHeader>
               <TableBody>
                 {items.length === 0 && (
-                  <TableRow><TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">{t("common.noItems")}</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">{t("common.noItems")}</TableCell></TableRow>
                 )}
                 {items.map((it, idx) => (
                   <TableRow key={idx}>
@@ -192,7 +161,6 @@ export function PurchaseForm({ id }: { id?: string }) {
                         </SelectContent>
                       </Select>
                     </TableCell>
-                    <TableCell><Input placeholder="e.g. INS-001" value={it.cylinderSerials || ""} onChange={(e) => update(idx, { cylinderSerials: e.target.value })} /></TableCell>
                     <TableCell><Input type="number" className="text-right" value={it.quantity} onChange={(e) => update(idx, { quantity: Number(e.target.value) })} /></TableCell>
                     <TableCell><Input type="number" className="text-right" value={it.price} onChange={(e) => update(idx, { price: Number(e.target.value) })} /></TableCell>
                     <TableCell><Input type="number" className="text-right" value={it.taxRate} onChange={(e) => update(idx, { taxRate: Number(e.target.value) })} /></TableCell>

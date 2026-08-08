@@ -3,6 +3,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { purchaseService } from "@/services/purchase.service";
+import { productService } from "@/services/product.service";
+import { cylinderService } from "@/services/cylinder.service";
+import { isCylinderProduct } from "@/lib/cylinder-product";
+import { ReceiveCylinderDialog } from "@/components/purchase/ReceiveCylinderDialog";
 import { formatCurrency, formatDate } from "@/utils/formatters";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,6 +32,9 @@ export function PurchaseView({ id }: { id: string }) {
   });
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<PaymentMethod>("bank");
+  const [receiveOpen, setReceiveOpen] = useState(false);
+  const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: productService.list });
+  const { data: cylinders = [] } = useQuery({ queryKey: ["cylinders"], queryFn: cylinderService.list });
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["purchases"] });
@@ -35,11 +42,13 @@ export function PurchaseView({ id }: { id: string }) {
     qc.invalidateQueries({ queryKey: ["products"] });
     qc.invalidateQueries({ queryKey: ["stockMovements"] });
     qc.invalidateQueries({ queryKey: ["dashboard"] });
+    qc.invalidateQueries({ queryKey: ["cylinders"] });
+    qc.invalidateQueries({ queryKey: ["cylinderMovements"] });
   };
 
   const receive = useMutation({
-    mutationFn: () => purchaseService.receive(id),
-    onSuccess: () => { invalidate(); toast.success(t("purchases.received")); },
+    mutationFn: (serialsByItem?: string[][]) => purchaseService.receive(id, serialsByItem ? { serialsByItem } : undefined),
+    onSuccess: () => { setReceiveOpen(false); invalidate(); toast.success(t("purchases.received")); },
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -61,6 +70,13 @@ export function PurchaseView({ id }: { id: string }) {
 
   const due = po.total - po.paid;
   const busy = receive.isPending || pay.isPending || cancel.isPending;
+  const needsCylinders = po.items.some((it) => isCylinderProduct(products.find((p) => p.id === it.productId)));
+  const startReceive = () => {
+    if (needsCylinders) setReceiveOpen(true);
+    else receive.mutate(undefined);
+  };
+  const serialsOf = (ids?: string[]) =>
+    (ids || []).map((cid) => cylinders.find((c) => c.id === cid)?.serialNumber || cid).join(", ") || "—";
 
   return (
     <div>
@@ -76,6 +92,9 @@ export function PurchaseView({ id }: { id: string }) {
                 <Link to="/purchases/$id/edit" params={{ id: po.id }}>{t("common.edit")}</Link>
               </Button>
             )}
+            <Button variant="outline" asChild className="no-print">
+              <Link to="/suppliers/$id/statement" params={{ id: po.supplierId }}>{t("suppliers.statement")}</Link>
+            </Button>
             <Button variant="outline" onClick={() => window.print()} className="no-print">{t("common.print")}</Button>
             <Badge>{t(`status.${po.status}` as any)}</Badge>
           </div>
@@ -86,13 +105,16 @@ export function PurchaseView({ id }: { id: string }) {
           {po.grnNo && <p className="text-sm text-muted-foreground">GRN: <span className="font-mono">{po.grnNo}</span></p>}
           <Table>
             <TableHeader><TableRow>
-              <TableHead>{t("sales.item")}</TableHead><TableHead className="text-right">{t("common.quantity")}</TableHead>
+              <TableHead>{t("sales.item")}</TableHead>
+              <TableHead>{t("cylinders.serial")}</TableHead>
+              <TableHead className="text-right">{t("common.quantity")}</TableHead>
               <TableHead className="text-right">{t("purchases.cost")}</TableHead><TableHead className="text-right">{t("common.total")}</TableHead>
             </TableRow></TableHeader>
             <TableBody>
               {po.items.map((it, i) => (
                 <TableRow key={i}>
                   <TableCell>{it.productName}</TableCell>
+                  <TableCell className="font-mono text-xs">{serialsOf(it.cylinderIds)}</TableCell>
                   <TableCell className="text-right">{it.quantity}</TableCell>
                   <TableCell className="text-right">{formatCurrency(it.price)}</TableCell>
                   <TableCell className="text-right font-medium">
@@ -117,7 +139,7 @@ export function PurchaseView({ id }: { id: string }) {
           <Card><CardContent className="pt-6 space-y-3">
             <h3 className="font-semibold">{t("sales.workflow")}</h3>
             {(po.status === "ordered" || po.status === "draft") && (
-              <Button className="w-full" disabled={busy} onClick={() => receive.mutate()}>{t("purchases.receive")}</Button>
+              <Button className="w-full" disabled={busy} onClick={startReceive}>{t("purchases.receive")}</Button>
             )}
             {(po.status === "ordered" || po.status === "draft") && (
               <Button className="w-full" variant="destructive" disabled={busy} onClick={() => cancel.mutate()}>{t("purchases.cancel")}</Button>
@@ -153,6 +175,13 @@ export function PurchaseView({ id }: { id: string }) {
           </CardContent></Card>
         </div>
       </div>
+      <ReceiveCylinderDialog
+        po={po}
+        open={receiveOpen}
+        onOpenChange={setReceiveOpen}
+        pending={receive.isPending}
+        onReceive={(serialsByItem) => receive.mutate(serialsByItem)}
+      />
     </div>
   );
 }

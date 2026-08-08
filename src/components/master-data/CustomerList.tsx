@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Plus } from "lucide-react";
+import { FileText, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "@tanstack/react-router";
 import { customerService } from "@/services/customer.service";
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/common/PageHeader";
 import { DataTable } from "@/components/common/DataTable";
 import { RowActions, actionsColumnClass } from "@/components/common/RowActions";
+import { PartyNameLink } from "@/components/common/PartyNameLink";
 import { formatCurrency } from "@/utils/formatters";
 import type { Customer } from "@/types";
 import { useT } from "@/i18n";
@@ -44,7 +45,7 @@ export function CustomerList() {
         dateKey="createdAt"
         onRowClick={(r) => navigate({ to: "/customers/$id", params: { id: r.id } })}
         columns={[
-          { key: "name", header: t("common.name"), sortable: true, sortValue: (r) => r.name, render: (r) => <span className="font-medium">{r.name}</span> },
+          { key: "name", header: t("common.name"), sortable: true, sortValue: (r) => r.name, render: (r) => <PartyNameLink kind="customer" id={r.id} name={r.name} /> },
           { key: "phone", header: t("common.phone"), sortable: true, sortValue: (r) => r.phone, render: (r) => r.phone },
           { key: "gstin", header: t("customers.gstin"), render: (r) => r.gstin ?? "—" },
           { key: "address", header: t("common.address"), render: (r) => <span className="text-muted-foreground">{r.address}</span> },
@@ -57,6 +58,11 @@ export function CustomerList() {
               <RowActions
                 onView={() => navigate({ to: "/customers/$id", params: { id: r.id } })}
                 onEdit={() => navigate({ to: "/customers/$id/edit", params: { id: r.id } })}
+                extras={[{
+                  label: t("customers.statement"),
+                  icon: <FileText className="h-3.5 w-3.5" />,
+                  onClick: () => navigate({ to: "/customers/$id/statement", params: { id: r.id } }),
+                }]}
                 onDelete={() => {
                   if (confirm(`${t("common.delete")} ${r.name}?`)) remove.mutate(r.id);
                 }}

@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/common/PageHeader";
 import { DataTable } from "@/components/common/DataTable";
 import { RowActions, actionsColumnClass } from "@/components/common/RowActions";
+import { PartyNameLink } from "@/components/common/PartyNameLink";
 import { formatCurrency, formatDate } from "@/utils/formatters";
 import type { SalesOrder, SalesStatus } from "@/types";
 import { useT } from "@/i18n";
@@ -54,7 +55,7 @@ export function SalesOrderList() {
         columns={[
           { key: "no", header: t("sales.orderNo"), sortable: true, sortValue: (r) => r.orderNo, render: (r) => <span className="font-mono text-xs">{r.orderNo}</span> },
           { key: "date", header: t("common.date"), sortable: true, sortValue: (r) => r.date, render: (r) => formatDate(r.date) },
-          { key: "cust", header: t("common.customer"), sortable: true, sortValue: (r) => r.customerName, render: (r) => <span className="font-medium">{r.customerName}</span> },
+          { key: "cust", header: t("common.customer"), sortable: true, sortValue: (r) => r.customerName, render: (r) => <PartyNameLink kind="customer" id={r.customerId} name={r.customerName} /> },
           { key: "total", header: t("common.total"), sortable: true, sortValue: (r) => r.total, render: (r) => formatCurrency(r.total), className: "text-right" },
           { key: "paid", header: t("common.paid"), sortable: true, sortValue: (r) => r.paid, render: (r) => formatCurrency(r.paid), className: "text-right" },
           { key: "due", header: t("common.due"), sortable: true, sortValue: (r) => r.total - r.paid, render: (r) => formatCurrency(r.total - r.paid), className: "text-right" },

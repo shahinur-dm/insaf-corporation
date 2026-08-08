@@ -1,7 +1,12 @@
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { deliveryService } from "@/services/delivery.service";
+import { productService } from "@/services/product.service";
+import { cylinderService } from "@/services/cylinder.service";
+import { isCylinderProduct } from "@/lib/cylinder-product";
+import { DeliveryCylinderDialog } from "@/components/delivery/DeliveryCylinderDialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,22 +21,40 @@ import { useT } from "@/i18n";
 export function DeliveryChallan({ id }: { id: string }) {
   const t = useT();
   const qc = useQueryClient();
+  const [assignOpen, setAssignOpen] = useState(false);
   const { data: d, isLoading, isFetched } = useQuery({
     queryKey: ["deliveries", id],
     queryFn: () => deliveryService.get(id),
   });
+  const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: productService.list });
+  const { data: cylinders = [] } = useQuery({ queryKey: ["cylinders"], queryFn: cylinderService.list });
   const confirm = useMutation({
-    mutationFn: () => deliveryService.confirm(id),
+    mutationFn: (payload?: { issuedIdsByItem?: string[][]; returnedIds?: string[] }) =>
+      deliveryService.confirm(id, payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["deliveries"] });
       qc.invalidateQueries({ queryKey: ["deliveries", id] });
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["sales"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["cylinders"] });
+      qc.invalidateQueries({ queryKey: ["cylinderMovements"] });
+      setAssignOpen(false);
       toast.success(t("deliveries.confirm"));
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  const needsCylinders = (d?.items || []).some((it) =>
+    isCylinderProduct(products.find((p) => p.id === it.productId)),
+  );
+  const canConfirm = d && (d.status === "pending" || d.status === "in_transit");
+  const startConfirm = () => {
+    if (needsCylinders) setAssignOpen(true);
+    else confirm.mutate(undefined);
+  };
+  const serialsOf = (ids?: string[]) =>
+    (ids || []).map((cid) => cylinders.find((c) => c.id === cid)?.serialNumber || cid).join(", ") || "—";
 
   if (isLoading) return <div className="p-6 text-sm text-muted-foreground">{t("common.loading")}</div>;
   if (isFetched && !d) return <div className="p-6 text-sm text-destructive">{t("deliveries.notFound")}</div>;
@@ -51,8 +74,8 @@ export function DeliveryChallan({ id }: { id: string }) {
                 <Link to="/deliveries/$id/edit" params={{ id: d.id }}>{t("common.edit")}</Link>
               </Button>
             )}
-            {(d.status === "pending" || d.status === "in_transit") && (
-              <Button disabled={confirm.isPending} onClick={() => confirm.mutate()}>{t("deliveries.confirm")}</Button>
+            {canConfirm && (
+              <Button disabled={confirm.isPending} onClick={startConfirm}>{t("deliveries.confirm")}</Button>
             )}
             <Badge>{t(`status.${d.status}` as any)}</Badge>
           </div>
@@ -81,23 +104,35 @@ export function DeliveryChallan({ id }: { id: string }) {
         </div>
         <Table>
           <TableHeader><TableRow>
-            <TableHead>{t("sales.item")}</TableHead><TableHead className="text-right">{t("common.quantity")}</TableHead>
+            <TableHead>{t("sales.item")}</TableHead>
+            <TableHead>{t("cylinders.serial")}</TableHead>
+            <TableHead className="text-right">{t("common.quantity")}</TableHead>
           </TableRow></TableHeader>
           <TableBody>
             {d.items.map((it, i) => (
               <TableRow key={i}>
                 <TableCell>{it.productName}</TableCell>
+                <TableCell className="font-mono text-xs">{serialsOf(it.cylinderIds)}</TableCell>
                 <TableCell className="text-right">{it.quantity}</TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
         <div className="flex justify-end">
-          <Button onClick={() => confirm.mutate()} disabled={d.status !== "pending" || confirm.isPending}>
-            {d.status === "pending" ? t("deliveries.confirm") : t(`status.${d.status}` as any)}
+          <Button onClick={startConfirm} disabled={!canConfirm || confirm.isPending}>
+            {canConfirm ? t("deliveries.confirm") : t(`status.${d.status}` as any)}
           </Button>
         </div>
       </CardContent></Card>
+      {d && (
+        <DeliveryCylinderDialog
+          delivery={d}
+          open={assignOpen}
+          onOpenChange={setAssignOpen}
+          pending={confirm.isPending}
+          onConfirm={(payload) => confirm.mutate(payload)}
+        />
+      )}
     </div>
   );
 }

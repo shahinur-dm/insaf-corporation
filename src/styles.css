@@ -691,6 +691,10 @@ body.login-route {
     background-color: white !important;
     color: black !important;
   }
+  .statement-sheet {
+    border: none !important;
+    box-shadow: none !important;
+  }
   .app-navbar,
   .app-sidebar,
   [data-sidebar="sidebar"],
