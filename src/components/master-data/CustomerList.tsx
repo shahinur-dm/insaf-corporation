@@ -49,7 +49,7 @@ export function CustomerList() {
           { key: "phone", header: t("common.phone"), sortable: true, sortValue: (r) => r.phone, render: (r) => r.phone },
           { key: "gstin", header: t("customers.gstin"), render: (r) => r.gstin ?? "—" },
           { key: "address", header: t("common.address"), render: (r) => <span className="text-muted-foreground">{r.address}</span> },
-          { key: "bal", header: t("customers.openingBal"), sortable: true, sortValue: (r) => r.openingBalance, render: (r) => formatCurrency(r.openingBalance), className: "text-right" },
+          { key: "bal", header: t("customers.receivable"), sortable: true, sortValue: (r) => r.openingBalance, render: (r) => formatCurrency(r.openingBalance), className: "text-right" },
           {
             key: "actions",
             header: t("common.actions"),

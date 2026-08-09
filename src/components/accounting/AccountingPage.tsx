@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { accountingService } from "@/services/accounting.service";
 import { customerService } from "@/services/customer.service";
 import { supplierService } from "@/services/supplier.service";
+import { hrService } from "@/services/hr.service";
 import { voucherSchema } from "@/utils/validators";
 import { PageHeader } from "@/components/common/PageHeader";
 import { DataTable } from "@/components/common/DataTable";
@@ -38,6 +39,7 @@ export function AccountingPage() {
   const { data: accounts = [] } = useQuery({ queryKey: ["accounts"], queryFn: accountingService.listAccounts });
   const { data: customers = [] } = useQuery({ queryKey: ["customers"], queryFn: customerService.list });
   const { data: suppliers = [] } = useQuery({ queryKey: ["suppliers"], queryFn: supplierService.list });
+  const { data: employees = [] } = useQuery({ queryKey: ["employees"], queryFn: hrService.listEmployees });
   const [open, setOpen] = useState(false);
   const [journalOpen, setJournalOpen] = useState(true);
   const [tab, setTab] = useState("journal");
@@ -137,7 +139,7 @@ export function AccountingPage() {
                       setValue("partyType", undefined);
                       setValue("partyId", "");
                     } else {
-                      setValue("partyType", v as "customer" | "supplier");
+                      setValue("partyType", v as "customer" | "supplier" | "employee");
                       setValue("partyId", "");
                       setValue("partyName", "");
                     }
@@ -146,6 +148,7 @@ export function AccountingPage() {
                     <SelectContent>
                       <SelectItem value="customer">{t("common.customer")}</SelectItem>
                       <SelectItem value="supplier">{t("common.supplier")}</SelectItem>
+                      <SelectItem value="employee">{t("hr.employee")}</SelectItem>
                       <SelectItem value="other">Other / Manual</SelectItem>
                     </SelectContent>
                   </Select>
@@ -170,6 +173,17 @@ export function AccountingPage() {
                       <SelectTrigger className="flex-1"><SelectValue placeholder={t("common.select")} /></SelectTrigger>
                       <SelectContent>
                         {suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  ) : partyType === "employee" ? (
+                    <Select value={watch("partyId")} onValueChange={(v) => {
+                      setValue("partyId", v);
+                      const emp = employees.find(x => x.id === v);
+                      if (emp) setValue("partyName", emp.name);
+                    }}>
+                      <SelectTrigger className="flex-1"><SelectValue placeholder={t("common.select")} /></SelectTrigger>
+                      <SelectContent>
+                        {employees.map(emp => <SelectItem key={emp.id} value={emp.id}>{emp.name}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   ) : (

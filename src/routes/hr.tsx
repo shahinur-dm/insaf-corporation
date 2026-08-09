@@ -1,7 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { HrPage } from "@/components/hr/HrPage";
+import { createFileRoute, Outlet } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/hr")({
   head: () => ({ meta: [{ title: "HR & Payroll · Insaf Gas Corp" }] }),
-  component: HrPage,
+  component: () => <Outlet />,
 });

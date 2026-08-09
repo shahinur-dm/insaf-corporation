@@ -81,7 +81,7 @@ export function CustomerForm({ id }: { id?: string }) {
             <Field label={t("common.email")} error={errors.email?.message}><Input type="email" {...register("email")} /></Field>
             <Field label={t("customers.gstin")}><Input {...register("gstin")} /></Field>
             <Field label={t("common.address")} error={errors.address?.message} className="md:col-span-2"><Input {...register("address")} /></Field>
-            <Field label={t("customers.openingBal")} error={errors.openingBalance?.message}>
+            <Field label={t("customers.receivable")} error={errors.openingBalance?.message}>
               <Input type="number" step="0.01" {...register("openingBalance", { valueAsNumber: true })} />
             </Field>
             <div className="md:col-span-2 flex justify-end gap-2">

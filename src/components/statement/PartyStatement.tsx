@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { FileText, Printer } from "lucide-react";
+import { ChevronRight, FileText, Printer } from "lucide-react";
 import { customerService } from "@/services/customer.service";
 import { supplierService } from "@/services/supplier.service";
+import { hrService } from "@/services/hr.service";
 import { salesService } from "@/services/sales.service";
 import { purchaseService } from "@/services/purchase.service";
 import { accountingService } from "@/services/accounting.service";
@@ -17,8 +18,13 @@ import {
 } from "@/components/ui/table";
 import { formatCurrency, formatDate } from "@/utils/formatters";
 import { EMPTY_DATE_RANGE, type DateRange } from "@/lib/date-range";
-import { buildPartyStatement, type PartyKind, type StatementLine } from "@/lib/party-statement";
-import { useT, type MessageKey } from "@/i18n";
+import {
+  buildPartyStatement,
+  groupStatementByMonth,
+  type PartyKind,
+  type StatementLine,
+} from "@/lib/party-statement";
+import { useI18n, useT, type MessageKey } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 const LINE_LABEL: Record<StatementLine["type"], MessageKey> = {
@@ -27,15 +33,22 @@ const LINE_LABEL: Record<StatementLine["type"], MessageKey> = {
   purchase: "statement.purchase",
   payment: "statement.payment",
   receipt: "statement.receipt",
+  salary: "statement.salary",
 };
 
 export function PartyStatement({ kind, id }: { kind: PartyKind; id: string }) {
   const t = useT();
+  const { locale } = useI18n();
   const [range, setRange] = useState<DateRange>(EMPTY_DATE_RANGE);
 
   const partyQuery = useQuery({
-    queryKey: [kind === "customer" ? "customers" : "suppliers", id],
-    queryFn: () => (kind === "customer" ? customerService.get(id) : supplierService.get(id)),
+    queryKey: [kind === "customer" ? "customers" : kind === "supplier" ? "suppliers" : "employees", id],
+    queryFn: () =>
+      kind === "customer"
+        ? customerService.get(id)
+        : kind === "supplier"
+          ? supplierService.get(id)
+          : hrService.getEmployee(id),
   });
   const { data: sales = [] } = useQuery({
     queryKey: ["sales"],
@@ -47,6 +60,11 @@ export function PartyStatement({ kind, id }: { kind: PartyKind; id: string }) {
     queryFn: purchaseService.list,
     enabled: kind === "supplier",
   });
+  const { data: payroll = [] } = useQuery({
+    queryKey: ["payroll"],
+    queryFn: hrService.listPayroll,
+    enabled: kind === "employee",
+  });
   const { data: vouchers = [] } = useQuery({
     queryKey: ["vouchers"],
     queryFn: accountingService.listVouchers,
@@ -56,10 +74,18 @@ export function PartyStatement({ kind, id }: { kind: PartyKind; id: string }) {
   const statement = useMemo(() => {
     if (!party) return null;
     if (kind === "customer") {
-      return buildPartyStatement({ kind: "customer", party, sales, vouchers, range });
+      return buildPartyStatement({ kind: "customer", party: party as never, sales, vouchers, range });
     }
-    return buildPartyStatement({ kind: "supplier", party, purchases, vouchers, range });
-  }, [kind, party, sales, purchases, vouchers, range]);
+    if (kind === "supplier") {
+      return buildPartyStatement({ kind: "supplier", party: party as never, purchases, vouchers, range });
+    }
+    return buildPartyStatement({ kind: "employee", party: party as never, payroll, vouchers, range });
+  }, [kind, party, sales, purchases, payroll, vouchers, range]);
+
+  const monthGroups = useMemo(
+    () => (kind === "employee" && statement ? groupStatementByMonth(statement.lines, locale) : []),
+    [kind, statement, locale],
+  );
 
   if (partyQuery.isLoading) {
     return <div className="p-6 text-sm text-muted-foreground">{t("common.loading")}</div>;
@@ -67,7 +93,7 @@ export function PartyStatement({ kind, id }: { kind: PartyKind; id: string }) {
   if (partyQuery.isFetched && !party) {
     return (
       <div className="p-6 text-sm text-destructive">
-        {kind === "customer" ? t("customers.notFound") : t("suppliers.notFound")}
+        {kind === "customer" ? t("customers.notFound") : kind === "supplier" ? t("suppliers.notFound") : t("hr.notFound")}
       </div>
     );
   }
@@ -78,8 +104,10 @@ export function PartyStatement({ kind, id }: { kind: PartyKind; id: string }) {
     : (statement.closingBalance >= 0 ? t("statement.payable") : t("statement.advance"));
 
   const backTo = kind === "customer"
-    ? { to: "/customers/$id", params: { id } }
-    : { to: "/suppliers/$id", params: { id } };
+    ? { to: "/customers/$id" as const, params: { id } }
+    : kind === "supplier"
+      ? { to: "/suppliers/$id" as const, params: { id } }
+      : { to: "/hr/$id" as const, params: { id } };
 
   return (
     <div>
@@ -136,78 +164,106 @@ export function PartyStatement({ kind, id }: { kind: PartyKind; id: string }) {
             />
           </div>
 
-          <div className="overflow-x-auto rounded-lg border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-28">{t("common.date")}</TableHead>
-                  <TableHead>{t("common.type")}</TableHead>
-                  <TableHead>{t("statement.particulars")}</TableHead>
-                  <TableHead className="text-right">{t("statement.debit")}</TableHead>
-                  <TableHead className="text-right">{t("statement.credit")}</TableHead>
-                  <TableHead className="text-right">{t("statement.balance")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {statement.lines.map((line) => (
-                  <TableRow key={line.id} className={line.type === "opening" ? "bg-muted/40 font-medium" : undefined}>
-                    <TableCell className="whitespace-nowrap text-xs">{formatDate(line.date)}</TableCell>
-                    <TableCell className="text-xs uppercase tracking-wide text-muted-foreground">
-                      {t(LINE_LABEL[line.type])}
-                    </TableCell>
-                    <TableCell>
-                      {line.href ? (
-                        <Link
-                          to={line.href.to}
-                          params={line.href.params}
-                          className="font-mono text-xs text-primary hover:underline"
-                        >
-                          {line.particulars}
-                        </Link>
-                      ) : (
-                        <span className="text-sm">{line.particulars || t(LINE_LABEL[line.type])}</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {line.debit ? formatCurrency(line.debit) : "—"}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {line.credit ? formatCurrency(line.credit) : "—"}
-                    </TableCell>
-                    <TableCell className={cn(
-                      "text-right tabular-nums font-medium",
-                      line.balance < 0 && "text-emerald-700 dark:text-emerald-400",
-                    )}>
-                      {formatCurrency(Math.abs(line.balance))}
-                      <span className="ml-1 text-[10px] font-normal text-muted-foreground">
-                        {kind === "customer"
-                          ? (line.balance >= 0 ? t("statement.dr") : t("statement.cr"))
-                          : (line.balance >= 0 ? t("statement.cr") : t("statement.dr"))}
-                      </span>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {statement.lines.length <= 1 && (
-                  <TableRow>
-                    <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
-                      {t("statement.empty")}
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-              <TableFooter>
-                <TableRow>
-                  <TableCell colSpan={3} className="font-semibold">{t("statement.closing")}</TableCell>
-                  <TableCell className="text-right font-semibold">{formatCurrency(statement.totalDebit)}</TableCell>
-                  <TableCell className="text-right font-semibold">{formatCurrency(statement.totalCredit)}</TableCell>
-                  <TableCell className="text-right font-semibold">
+          {kind === "employee" ? (
+            <div className="space-y-2">
+              <OpeningStrip line={statement.lines[0]} kind={kind} t={t} />
+              {monthGroups.map((group, index) => (
+                <details
+                  key={group.key}
+                  className="statement-month overflow-hidden rounded-lg border bg-card"
+                  defaultOpen={index === monthGroups.length - 1}
+                >
+                  <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden">
+                    <ChevronRight className="statement-month-chevron h-4 w-4 shrink-0 text-muted-foreground transition-transform" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        {t("statement.totalPayable")}
+                      </p>
+                      <p className="font-display text-base font-semibold tabular-nums">
+                        {formatCurrency(group.payable)}
+                      </p>
+                    </div>
+                    <p className="shrink-0 font-display text-base font-semibold sm:text-lg">{group.label}</p>
+                  </summary>
+                  <div className="statement-month-body border-t">
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-28">{t("common.date")}</TableHead>
+                            <TableHead>{t("common.type")}</TableHead>
+                            <TableHead>{t("statement.particulars")}</TableHead>
+                            <TableHead className="text-right">{t("statement.debit")}</TableHead>
+                            <TableHead className="text-right">{t("statement.credit")}</TableHead>
+                            <TableHead className="text-right">{t("statement.balance")}</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {group.lines.map((line) => (
+                            <StatementLineRow key={line.id} line={line} kind={kind} t={t} />
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                </details>
+              ))}
+              {monthGroups.length === 0 && (
+                <div className="rounded-lg border py-8 text-center text-sm text-muted-foreground">
+                  {t("statement.empty")}
+                </div>
+              )}
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/40 px-4 py-3 text-sm font-semibold">
+                <span>{t("statement.closing")}</span>
+                <div className="flex flex-wrap gap-4 tabular-nums">
+                  <span>{formatCurrency(statement.totalDebit)}</span>
+                  <span>{formatCurrency(statement.totalCredit)}</span>
+                  <span>
                     {formatCurrency(Math.abs(statement.closingBalance))}{" "}
                     <span className="text-xs font-normal text-muted-foreground">{closingLabel}</span>
-                  </TableCell>
-                </TableRow>
-              </TableFooter>
-            </Table>
-          </div>
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-28">{t("common.date")}</TableHead>
+                    <TableHead>{t("common.type")}</TableHead>
+                    <TableHead>{t("statement.particulars")}</TableHead>
+                    <TableHead className="text-right">{t("statement.debit")}</TableHead>
+                    <TableHead className="text-right">{t("statement.credit")}</TableHead>
+                    <TableHead className="text-right">{t("statement.balance")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {statement.lines.map((line) => (
+                    <StatementLineRow key={line.id} line={line} kind={kind} t={t} />
+                  ))}
+                  {statement.lines.length <= 1 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
+                        {t("statement.empty")}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+                <TableFooter>
+                  <TableRow>
+                    <TableCell colSpan={3} className="font-semibold">{t("statement.closing")}</TableCell>
+                    <TableCell className="text-right font-semibold">{formatCurrency(statement.totalDebit)}</TableCell>
+                    <TableCell className="text-right font-semibold">{formatCurrency(statement.totalCredit)}</TableCell>
+                    <TableCell className="text-right font-semibold">
+                      {formatCurrency(Math.abs(statement.closingBalance))}{" "}
+                      <span className="text-xs font-normal text-muted-foreground">{closingLabel}</span>
+                    </TableCell>
+                  </TableRow>
+                </TableFooter>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -220,5 +276,84 @@ function SummaryTile({ label, value, emphasize }: { label: string; value: string
       <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className="mt-1 font-display text-lg font-semibold">{value}</p>
     </div>
+  );
+}
+
+function OpeningStrip({
+  line,
+  kind,
+  t,
+}: {
+  line?: StatementLine;
+  kind: PartyKind;
+  t: (key: MessageKey) => string;
+}) {
+  if (!line || line.type !== "opening") return null;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/40 px-4 py-3 text-sm">
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          {t("statement.opening")}
+        </p>
+        <p className="text-xs text-muted-foreground">{formatDate(line.date)}</p>
+      </div>
+      <p className="tabular-nums font-medium">
+        {formatCurrency(Math.abs(line.balance))}
+        <span className="ml-1 text-[10px] font-normal text-muted-foreground">
+          {kind === "customer"
+            ? (line.balance >= 0 ? t("statement.dr") : t("statement.cr"))
+            : (line.balance >= 0 ? t("statement.cr") : t("statement.dr"))}
+        </span>
+      </p>
+    </div>
+  );
+}
+
+function StatementLineRow({
+  line,
+  kind,
+  t,
+}: {
+  line: StatementLine;
+  kind: PartyKind;
+  t: (key: MessageKey) => string;
+}) {
+  return (
+    <TableRow className={line.type === "opening" ? "bg-muted/40 font-medium" : undefined}>
+      <TableCell className="whitespace-nowrap text-xs">{formatDate(line.date)}</TableCell>
+      <TableCell className="text-xs uppercase tracking-wide text-muted-foreground">
+        {t(LINE_LABEL[line.type])}
+      </TableCell>
+      <TableCell>
+        {line.href ? (
+          <Link
+            to={line.href.to}
+            params={line.href.params}
+            className="font-mono text-xs text-primary hover:underline"
+          >
+            {line.particulars}
+          </Link>
+        ) : (
+          <span className="text-sm">{line.particulars || t(LINE_LABEL[line.type])}</span>
+        )}
+      </TableCell>
+      <TableCell className="text-right tabular-nums">
+        {line.debit ? formatCurrency(line.debit) : "—"}
+      </TableCell>
+      <TableCell className="text-right tabular-nums">
+        {line.credit ? formatCurrency(line.credit) : "—"}
+      </TableCell>
+      <TableCell className={cn(
+        "text-right tabular-nums font-medium",
+        line.balance < 0 && "text-emerald-700 dark:text-emerald-400",
+      )}>
+        {formatCurrency(Math.abs(line.balance))}
+        <span className="ml-1 text-[10px] font-normal text-muted-foreground">
+          {kind === "customer"
+            ? (line.balance >= 0 ? t("statement.dr") : t("statement.cr"))
+            : (line.balance >= 0 ? t("statement.cr") : t("statement.dr"))}
+        </span>
+      </TableCell>
+    </TableRow>
   );
 }

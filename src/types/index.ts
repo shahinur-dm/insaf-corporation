@@ -259,7 +259,7 @@ export interface Voucher {
   date: string;
   account: PaymentMethod;
   amount: number;
-  partyType?: "customer" | "supplier";
+  partyType?: "customer" | "supplier" | "employee";
   partyId?: string;
   partyName?: string;
   drAccount?: string;

@@ -21,6 +21,7 @@ import { Route as SuppliersIndexRouteImport } from './routes/suppliers.index'
 import { Route as SalesIndexRouteImport } from './routes/sales.index'
 import { Route as PurchasesIndexRouteImport } from './routes/purchases.index'
 import { Route as ProductsIndexRouteImport } from './routes/products.index'
+import { Route as HrIndexRouteImport } from './routes/hr.index'
 import { Route as DeliveriesIndexRouteImport } from './routes/deliveries.index'
 import { Route as CylindersIndexRouteImport } from './routes/cylinders.index'
 import { Route as CustomersIndexRouteImport } from './routes/customers.index'
@@ -33,6 +34,7 @@ import { Route as PurchasesNewRouteImport } from './routes/purchases.new'
 import { Route as PurchasesIdRouteImport } from './routes/purchases.$id'
 import { Route as ProductsNewRouteImport } from './routes/products.new'
 import { Route as ProductsIdRouteImport } from './routes/products.$id'
+import { Route as HrIdRouteImport } from './routes/hr.$id'
 import { Route as DeliveriesNewRouteImport } from './routes/deliveries.new'
 import { Route as DeliveriesIdRouteImport } from './routes/deliveries.$id'
 import { Route as CylindersNewRouteImport } from './routes/cylinders.new'
@@ -44,6 +46,7 @@ import { Route as SuppliersIdEditRouteImport } from './routes/suppliers.$id.edit
 import { Route as SalesIdEditRouteImport } from './routes/sales.$id.edit'
 import { Route as PurchasesIdEditRouteImport } from './routes/purchases.$id.edit'
 import { Route as ProductsIdEditRouteImport } from './routes/products.$id.edit'
+import { Route as HrIdStatementRouteImport } from './routes/hr.$id.statement'
 import { Route as DeliveriesIdEditRouteImport } from './routes/deliveries.$id.edit'
 import { Route as CylindersIdEditRouteImport } from './routes/cylinders.$id.edit'
 import { Route as CustomersIdStatementRouteImport } from './routes/customers.$id.statement'
@@ -109,6 +112,11 @@ const ProductsIndexRoute = ProductsIndexRouteImport.update({
   path: '/products/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HrIndexRoute = HrIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => HrRoute,
+} as any)
 const DeliveriesIndexRoute = DeliveriesIndexRouteImport.update({
   id: '/deliveries/',
   path: '/deliveries/',
@@ -169,6 +177,11 @@ const ProductsIdRoute = ProductsIdRouteImport.update({
   path: '/products/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HrIdRoute = HrIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => HrRoute,
+} as any)
 const DeliveriesNewRoute = DeliveriesNewRouteImport.update({
   id: '/deliveries/new',
   path: '/deliveries/new',
@@ -224,6 +237,11 @@ const ProductsIdEditRoute = ProductsIdEditRouteImport.update({
   path: '/edit',
   getParentRoute: () => ProductsIdRoute,
 } as any)
+const HrIdStatementRoute = HrIdStatementRouteImport.update({
+  id: '/statement',
+  path: '/statement',
+  getParentRoute: () => HrIdRoute,
+} as any)
 const DeliveriesIdEditRoute = DeliveriesIdEditRouteImport.update({
   id: '/edit',
   path: '/edit',
@@ -249,7 +267,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/accounting': typeof AccountingRoute
   '/expenses': typeof ExpensesRoute
-  '/hr': typeof HrRoute
+  '/hr': typeof HrRouteWithChildren
   '/inventory': typeof InventoryRoute
   '/login': typeof LoginRoute
   '/reports': typeof ReportsRoute
@@ -260,6 +278,7 @@ export interface FileRoutesByFullPath {
   '/cylinders/new': typeof CylindersNewRoute
   '/deliveries/$id': typeof DeliveriesIdRouteWithChildren
   '/deliveries/new': typeof DeliveriesNewRoute
+  '/hr/$id': typeof HrIdRouteWithChildren
   '/products/$id': typeof ProductsIdRouteWithChildren
   '/products/new': typeof ProductsNewRoute
   '/purchases/$id': typeof PurchasesIdRouteWithChildren
@@ -272,6 +291,7 @@ export interface FileRoutesByFullPath {
   '/customers/': typeof CustomersIndexRoute
   '/cylinders/': typeof CylindersIndexRoute
   '/deliveries/': typeof DeliveriesIndexRoute
+  '/hr/': typeof HrIndexRoute
   '/products/': typeof ProductsIndexRoute
   '/purchases/': typeof PurchasesIndexRoute
   '/sales/': typeof SalesIndexRoute
@@ -280,6 +300,7 @@ export interface FileRoutesByFullPath {
   '/customers/$id/statement': typeof CustomersIdStatementRoute
   '/cylinders/$id/edit': typeof CylindersIdEditRoute
   '/deliveries/$id/edit': typeof DeliveriesIdEditRoute
+  '/hr/$id/statement': typeof HrIdStatementRoute
   '/products/$id/edit': typeof ProductsIdEditRoute
   '/purchases/$id/edit': typeof PurchasesIdEditRoute
   '/sales/$id/edit': typeof SalesIdEditRoute
@@ -290,7 +311,6 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/accounting': typeof AccountingRoute
   '/expenses': typeof ExpensesRoute
-  '/hr': typeof HrRoute
   '/inventory': typeof InventoryRoute
   '/login': typeof LoginRoute
   '/reports': typeof ReportsRoute
@@ -301,6 +321,7 @@ export interface FileRoutesByTo {
   '/cylinders/new': typeof CylindersNewRoute
   '/deliveries/$id': typeof DeliveriesIdRouteWithChildren
   '/deliveries/new': typeof DeliveriesNewRoute
+  '/hr/$id': typeof HrIdRouteWithChildren
   '/products/$id': typeof ProductsIdRouteWithChildren
   '/products/new': typeof ProductsNewRoute
   '/purchases/$id': typeof PurchasesIdRouteWithChildren
@@ -313,6 +334,7 @@ export interface FileRoutesByTo {
   '/customers': typeof CustomersIndexRoute
   '/cylinders': typeof CylindersIndexRoute
   '/deliveries': typeof DeliveriesIndexRoute
+  '/hr': typeof HrIndexRoute
   '/products': typeof ProductsIndexRoute
   '/purchases': typeof PurchasesIndexRoute
   '/sales': typeof SalesIndexRoute
@@ -321,6 +343,7 @@ export interface FileRoutesByTo {
   '/customers/$id/statement': typeof CustomersIdStatementRoute
   '/cylinders/$id/edit': typeof CylindersIdEditRoute
   '/deliveries/$id/edit': typeof DeliveriesIdEditRoute
+  '/hr/$id/statement': typeof HrIdStatementRoute
   '/products/$id/edit': typeof ProductsIdEditRoute
   '/purchases/$id/edit': typeof PurchasesIdEditRoute
   '/sales/$id/edit': typeof SalesIdEditRoute
@@ -332,7 +355,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/accounting': typeof AccountingRoute
   '/expenses': typeof ExpensesRoute
-  '/hr': typeof HrRoute
+  '/hr': typeof HrRouteWithChildren
   '/inventory': typeof InventoryRoute
   '/login': typeof LoginRoute
   '/reports': typeof ReportsRoute
@@ -343,6 +366,7 @@ export interface FileRoutesById {
   '/cylinders/new': typeof CylindersNewRoute
   '/deliveries/$id': typeof DeliveriesIdRouteWithChildren
   '/deliveries/new': typeof DeliveriesNewRoute
+  '/hr/$id': typeof HrIdRouteWithChildren
   '/products/$id': typeof ProductsIdRouteWithChildren
   '/products/new': typeof ProductsNewRoute
   '/purchases/$id': typeof PurchasesIdRouteWithChildren
@@ -355,6 +379,7 @@ export interface FileRoutesById {
   '/customers/': typeof CustomersIndexRoute
   '/cylinders/': typeof CylindersIndexRoute
   '/deliveries/': typeof DeliveriesIndexRoute
+  '/hr/': typeof HrIndexRoute
   '/products/': typeof ProductsIndexRoute
   '/purchases/': typeof PurchasesIndexRoute
   '/sales/': typeof SalesIndexRoute
@@ -363,6 +388,7 @@ export interface FileRoutesById {
   '/customers/$id/statement': typeof CustomersIdStatementRoute
   '/cylinders/$id/edit': typeof CylindersIdEditRoute
   '/deliveries/$id/edit': typeof DeliveriesIdEditRoute
+  '/hr/$id/statement': typeof HrIdStatementRoute
   '/products/$id/edit': typeof ProductsIdEditRoute
   '/purchases/$id/edit': typeof PurchasesIdEditRoute
   '/sales/$id/edit': typeof SalesIdEditRoute
@@ -386,6 +412,7 @@ export interface FileRouteTypes {
     | '/cylinders/new'
     | '/deliveries/$id'
     | '/deliveries/new'
+    | '/hr/$id'
     | '/products/$id'
     | '/products/new'
     | '/purchases/$id'
@@ -398,6 +425,7 @@ export interface FileRouteTypes {
     | '/customers/'
     | '/cylinders/'
     | '/deliveries/'
+    | '/hr/'
     | '/products/'
     | '/purchases/'
     | '/sales/'
@@ -406,6 +434,7 @@ export interface FileRouteTypes {
     | '/customers/$id/statement'
     | '/cylinders/$id/edit'
     | '/deliveries/$id/edit'
+    | '/hr/$id/statement'
     | '/products/$id/edit'
     | '/purchases/$id/edit'
     | '/sales/$id/edit'
@@ -416,7 +445,6 @@ export interface FileRouteTypes {
     | '/'
     | '/accounting'
     | '/expenses'
-    | '/hr'
     | '/inventory'
     | '/login'
     | '/reports'
@@ -427,6 +455,7 @@ export interface FileRouteTypes {
     | '/cylinders/new'
     | '/deliveries/$id'
     | '/deliveries/new'
+    | '/hr/$id'
     | '/products/$id'
     | '/products/new'
     | '/purchases/$id'
@@ -439,6 +468,7 @@ export interface FileRouteTypes {
     | '/customers'
     | '/cylinders'
     | '/deliveries'
+    | '/hr'
     | '/products'
     | '/purchases'
     | '/sales'
@@ -447,6 +477,7 @@ export interface FileRouteTypes {
     | '/customers/$id/statement'
     | '/cylinders/$id/edit'
     | '/deliveries/$id/edit'
+    | '/hr/$id/statement'
     | '/products/$id/edit'
     | '/purchases/$id/edit'
     | '/sales/$id/edit'
@@ -468,6 +499,7 @@ export interface FileRouteTypes {
     | '/cylinders/new'
     | '/deliveries/$id'
     | '/deliveries/new'
+    | '/hr/$id'
     | '/products/$id'
     | '/products/new'
     | '/purchases/$id'
@@ -480,6 +512,7 @@ export interface FileRouteTypes {
     | '/customers/'
     | '/cylinders/'
     | '/deliveries/'
+    | '/hr/'
     | '/products/'
     | '/purchases/'
     | '/sales/'
@@ -488,6 +521,7 @@ export interface FileRouteTypes {
     | '/customers/$id/statement'
     | '/cylinders/$id/edit'
     | '/deliveries/$id/edit'
+    | '/hr/$id/statement'
     | '/products/$id/edit'
     | '/purchases/$id/edit'
     | '/sales/$id/edit'
@@ -499,7 +533,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountingRoute: typeof AccountingRoute
   ExpensesRoute: typeof ExpensesRoute
-  HrRoute: typeof HrRoute
+  HrRoute: typeof HrRouteWithChildren
   InventoryRoute: typeof InventoryRoute
   LoginRoute: typeof LoginRoute
   ReportsRoute: typeof ReportsRoute
@@ -614,6 +648,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProductsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/hr/': {
+      id: '/hr/'
+      path: '/'
+      fullPath: '/hr/'
+      preLoaderRoute: typeof HrIndexRouteImport
+      parentRoute: typeof HrRoute
+    }
     '/deliveries/': {
       id: '/deliveries/'
       path: '/deliveries'
@@ -698,6 +739,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProductsIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/hr/$id': {
+      id: '/hr/$id'
+      path: '/$id'
+      fullPath: '/hr/$id'
+      preLoaderRoute: typeof HrIdRouteImport
+      parentRoute: typeof HrRoute
+    }
     '/deliveries/new': {
       id: '/deliveries/new'
       path: '/deliveries/new'
@@ -775,6 +823,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProductsIdEditRouteImport
       parentRoute: typeof ProductsIdRoute
     }
+    '/hr/$id/statement': {
+      id: '/hr/$id/statement'
+      path: '/statement'
+      fullPath: '/hr/$id/statement'
+      preLoaderRoute: typeof HrIdStatementRouteImport
+      parentRoute: typeof HrIdRoute
+    }
     '/deliveries/$id/edit': {
       id: '/deliveries/$id/edit'
       path: '/edit'
@@ -805,6 +860,28 @@ declare module '@tanstack/react-router' {
     }
   }
 }
+
+interface HrIdRouteChildren {
+  HrIdStatementRoute: typeof HrIdStatementRoute
+}
+
+const HrIdRouteChildren: HrIdRouteChildren = {
+  HrIdStatementRoute: HrIdStatementRoute,
+}
+
+const HrIdRouteWithChildren = HrIdRoute._addFileChildren(HrIdRouteChildren)
+
+interface HrRouteChildren {
+  HrIdRoute: typeof HrIdRouteWithChildren
+  HrIndexRoute: typeof HrIndexRoute
+}
+
+const HrRouteChildren: HrRouteChildren = {
+  HrIdRoute: HrIdRouteWithChildren,
+  HrIndexRoute: HrIndexRoute,
+}
+
+const HrRouteWithChildren = HrRoute._addFileChildren(HrRouteChildren)
 
 interface CustomersIdRouteChildren {
   CustomersIdEditRoute: typeof CustomersIdEditRoute
@@ -897,7 +974,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountingRoute: AccountingRoute,
   ExpensesRoute: ExpensesRoute,
-  HrRoute: HrRoute,
+  HrRoute: HrRouteWithChildren,
   InventoryRoute: InventoryRoute,
   LoginRoute: LoginRoute,
   ReportsRoute: ReportsRoute,

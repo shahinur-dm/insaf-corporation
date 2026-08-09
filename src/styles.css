@@ -686,6 +686,26 @@ body.login-route {
   }
 }
 
+.statement-month > summary {
+  list-style: none;
+}
+.statement-month > summary::-webkit-details-marker {
+  display: none;
+}
+.statement-month[open] .statement-month-chevron {
+  transform: rotate(90deg);
+}
+
+.fold-panel > summary {
+  list-style: none;
+}
+.fold-panel > summary::-webkit-details-marker {
+  display: none;
+}
+.fold-panel[open] .fold-panel-chevron {
+  transform: rotate(90deg);
+}
+
 @media print {
   body {
     background-color: white !important;
@@ -694,6 +714,10 @@ body.login-route {
   .statement-sheet {
     border: none !important;
     box-shadow: none !important;
+  }
+  details.statement-month > .statement-month-body,
+  details.fold-panel > .fold-panel-body {
+    display: block !important;
   }
   .app-navbar,
   .app-sidebar,

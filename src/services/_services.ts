@@ -780,7 +780,7 @@ export const accountingService = {
     account: PaymentMethod;
     amount: number;
     date?: string;
-    partyType?: "customer" | "supplier";
+    partyType?: "customer" | "supplier" | "employee";
     partyId?: string;
     partyName?: string;
     drAccount?: string;

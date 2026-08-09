@@ -1,9 +1,9 @@
-import type { Customer, PurchaseOrder, SalesOrder, Supplier, Voucher } from "@/types";
+import type { Customer, Employee, PayrollRun, PurchaseOrder, SalesOrder, Supplier, Voucher } from "@/types";
 import { parseRecordTime, type DateRange } from "@/lib/date-range";
 
-export type PartyKind = "customer" | "supplier";
+export type PartyKind = "customer" | "supplier" | "employee";
 
-export type StatementLineType = "opening" | "invoice" | "purchase" | "payment" | "receipt";
+export type StatementLineType = "opening" | "invoice" | "purchase" | "payment" | "receipt" | "salary";
 
 export type StatementLineHref =
   | { to: "/sales/$id"; params: { id: string } }
@@ -17,7 +17,18 @@ export type StatementLine = {
   debit: number;
   credit: number;
   balance: number;
+  monthKey?: string;
   href?: StatementLineHref;
+};
+
+export type StatementMonthGroup = {
+  key: string;
+  label: string;
+  payable: number;
+  debit: number;
+  credit: number;
+  closing: number;
+  lines: StatementLine[];
 };
 
 export type PartyStatementModel = {
@@ -38,6 +49,53 @@ type RawLine = Omit<StatementLine, "balance">;
 
 function signedDelta(kind: PartyKind, debit: number, credit: number) {
   return kind === "customer" ? debit - credit : credit - debit;
+}
+
+function payrollDate(run: PayrollRun) {
+  return run.paidAt || run.createdAt || `${run.month}-01`;
+}
+
+function buildEmployeeRaws(payroll: PayrollRun[], vouchers: Voucher[], partyId: string): RawLine[] {
+  const lines: RawLine[] = [];
+  for (const run of payroll) {
+    if (run.employeeId !== partyId) continue;
+    const date = payrollDate(run);
+    lines.push({
+      id: `sal-${run.id}`,
+      date,
+      particulars: run.month,
+      type: "salary",
+      debit: 0,
+      credit: run.net || 0,
+      monthKey: run.month,
+    });
+    if (run.status === "paid" && (run.net || 0) > 0) {
+      lines.push({
+        id: `sal-pay-${run.id}`,
+        date: run.paidAt || date,
+        particulars: run.month,
+        type: "payment",
+        debit: run.net,
+        credit: 0,
+        monthKey: run.month,
+      });
+    }
+  }
+  for (const v of vouchers) {
+    if (v.partyType !== "employee" || v.partyId !== partyId) continue;
+    if (v.type === "journal") continue;
+    const isPayment = v.type === "payment";
+    lines.push({
+      id: `vch-${v.id}`,
+      date: v.date,
+      particulars: v.voucherNo + (v.notes ? ` — ${v.notes}` : ""),
+      type: isPayment ? "payment" : "receipt",
+      debit: isPayment ? v.amount : 0,
+      credit: isPayment ? 0 : v.amount,
+      monthKey: monthKeyOf(v.date),
+    });
+  }
+  return lines;
 }
 
 function buildCustomerRaws(sales: SalesOrder[], vouchers: Voucher[], partyId: string): RawLine[] {
@@ -128,11 +186,58 @@ function sortByDate(a: RawLine, b: RawLine) {
   return (parseRecordTime(a.date) ?? 0) - (parseRecordTime(b.date) ?? 0);
 }
 
+export function monthKeyOf(value: string) {
+  if (/^\d{4}-\d{2}$/.test(value)) return value;
+  const t = parseRecordTime(value);
+  if (t == null) return "";
+  const d = new Date(t);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+export function formatMonthLabel(key: string, locale: string) {
+  const [y, m] = key.split("-").map(Number);
+  if (!y || !m) return key;
+  const tag = locale.startsWith("bn") ? "bn-BD" : "en-US";
+  const month = new Date(y, m - 1, 1).toLocaleDateString(tag, { month: "long" });
+  return `${month}, ${y}`;
+}
+
+export function groupStatementByMonth(
+  lines: StatementLine[],
+  locale: string,
+): StatementMonthGroup[] {
+  const map = new Map<string, StatementLine[]>();
+  for (const line of lines) {
+    if (line.type === "opening") continue;
+    const key = line.monthKey || monthKeyOf(line.date) || "other";
+    const list = map.get(key) ?? [];
+    list.push(line);
+    map.set(key, list);
+  }
+  return [...map.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, monthLines]) => {
+      const debit = monthLines.reduce((s, l) => s + l.debit, 0);
+      const credit = monthLines.reduce((s, l) => s + l.credit, 0);
+      const closing = monthLines[monthLines.length - 1]?.balance ?? 0;
+      return {
+        key,
+        label: key === "other" ? key : formatMonthLabel(key, locale),
+        payable: Math.max(0, closing),
+        debit,
+        credit,
+        closing,
+        lines: monthLines,
+      };
+    });
+}
+
 export function buildPartyStatement(opts: {
   kind: "customer";
   party: Customer;
   sales: SalesOrder[];
   purchases?: PurchaseOrder[];
+  payroll?: PayrollRun[];
   vouchers: Voucher[];
   range: DateRange;
 }): PartyStatementModel;
@@ -141,14 +246,25 @@ export function buildPartyStatement(opts: {
   party: Supplier;
   sales?: SalesOrder[];
   purchases: PurchaseOrder[];
+  payroll?: PayrollRun[];
+  vouchers: Voucher[];
+  range: DateRange;
+}): PartyStatementModel;
+export function buildPartyStatement(opts: {
+  kind: "employee";
+  party: Employee;
+  sales?: SalesOrder[];
+  purchases?: PurchaseOrder[];
+  payroll: PayrollRun[];
   vouchers: Voucher[];
   range: DateRange;
 }): PartyStatementModel;
 export function buildPartyStatement(opts: {
   kind: PartyKind;
-  party: Customer | Supplier;
+  party: Customer | Supplier | Employee;
   sales?: SalesOrder[];
   purchases?: PurchaseOrder[];
+  payroll?: PayrollRun[];
   vouchers: Voucher[];
   range: DateRange;
 }): PartyStatementModel {
@@ -156,13 +272,16 @@ export function buildPartyStatement(opts: {
   const raws = (
     kind === "customer"
       ? buildCustomerRaws(opts.sales ?? [], vouchers, party.id)
-      : buildSupplierRaws(opts.purchases ?? [], vouchers, party.id)
+      : kind === "supplier"
+        ? buildSupplierRaws(opts.purchases ?? [], vouchers, party.id)
+        : buildEmployeeRaws(opts.payroll ?? [], vouchers, party.id)
   ).sort(sortByDate);
 
   const fromTs = range.preset !== "all" && range.from ? parseRecordTime(range.from) : null;
   const toTs = range.preset !== "all" && range.to ? parseRecordTime(`${range.to}T23:59:59`) : null;
 
-  let opening = party.openingBalance || 0;
+  const openingSeed = "openingBalance" in party ? (party.openingBalance || 0) : 0;
+  let opening = openingSeed;
   const period: RawLine[] = [];
   for (const line of raws) {
     const t = parseRecordTime(line.date) ?? 0;
@@ -207,8 +326,8 @@ export function buildPartyStatement(opts: {
     partyName: party.name,
     partyKind: kind,
     phone: party.phone,
-    address: party.address,
-    gstin: party.gstin,
+    address: "address" in party ? party.address : `${(party as Employee).designation} · ${(party as Employee).department}`,
+    gstin: "gstin" in party ? party.gstin : undefined,
     openingBalance: opening,
     lines,
     totalDebit,

@@ -71,8 +71,9 @@ export function buildCylinderLedger(opts: {
   customers: Customer[];
   suppliers: Supplier[];
   range: DateRange;
+  productId?: string;
 }): CylinderHeadReport[] {
-  const { cylinders, movements, products, customers, suppliers, range } = opts;
+  const { cylinders, movements, products, customers, suppliers, range, productId } = opts;
   const cylMap = new Map(cylinders.map((c) => [c.id, c]));
   const fromTs = range.preset !== "all" && range.from ? parseRecordTime(range.from) : null;
   const toTs = range.preset !== "all" && range.to ? parseRecordTime(`${range.to}T23:59:59`) : null;
@@ -94,6 +95,7 @@ export function buildCylinderLedger(opts: {
   ) => {
     if (!id || (!delivered && !received)) return;
     const cyl = cylMap.get(m.cylinderId);
+    if (productId && cyl?.productId !== productId) return;
     ensure(id, kind, name).hits.push({
       date: m.timestamp,
       productName: productNameOf(cyl, products),

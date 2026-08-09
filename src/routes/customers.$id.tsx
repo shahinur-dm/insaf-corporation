@@ -79,7 +79,7 @@ function CustomerDetailBody() {
         <Info label={t("common.phone")} value={c.phone} />
         <Info label={t("common.email")} value={c.email || "—"} />
         <Info label={t("customers.gstin")} value={c.gstin || "—"} />
-        <Info label={t("customers.openingBal")} value={formatCurrency(c.openingBalance)} />
+        <Info label={t("customers.receivable")} value={formatCurrency(c.openingBalance)} />
         <Info label={t("common.date")} value={formatDate(c.createdAt)} />
       </CardContent></Card>
     </div>

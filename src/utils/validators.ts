@@ -78,7 +78,7 @@ export const voucherSchema = z.object({
   type: z.enum(["payment", "receipt", "journal"]),
   account: z.string().min(1),
   amount: z.coerce.number().min(1),
-  partyType: z.enum(["customer", "supplier"]).optional(),
+  partyType: z.enum(["customer", "supplier", "employee"]).optional(),
   partyId: z.string().optional(),
   partyName: z.string().optional(),
   drAccount: z.string().optional(),

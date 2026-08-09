@@ -2,12 +2,14 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { hrService } from "@/services/hr.service";
 import { employeeSchema } from "@/utils/validators";
 import { PageHeader } from "@/components/common/PageHeader";
 import { DataTable } from "@/components/common/DataTable";
 import { RowActions, actionsColumnClass } from "@/components/common/RowActions";
+import { PartyNameLink } from "@/components/common/PartyNameLink";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,13 +23,14 @@ import { formatCurrency, formatDate } from "@/utils/formatters";
 import type { Employee, PayrollRun } from "@/types";
 import { z } from "zod";
 import { useT } from "@/i18n";
-import { Printer } from "lucide-react";
+import { FileText, Printer } from "lucide-react";
 import { PayslipPrint } from "./PayslipPrint";
 
 type EmpForm = z.infer<typeof employeeSchema>;
 
 export function HrPage() {
   const t = useT();
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const { data: employees = [] } = useQuery({ queryKey: ["employees"], queryFn: hrService.listEmployees });
   const { data: payroll = [] } = useQuery({ queryKey: ["payroll"], queryFn: hrService.listPayroll });
@@ -236,9 +239,10 @@ export function HrPage() {
             rows={employees}
             searchKeys={["name", "employeeNo", "department"]}
             dateKey="joiningDate"
+            onRowClick={(r) => navigate({ to: "/hr/$id", params: { id: r.id } })}
             columns={[
               { key: "no", header: t("hr.employeeId"), sortable: true, sortValue: (r) => r.employeeNo, render: (r) => <span className="font-mono text-xs">{r.employeeNo}</span> },
-              { key: "name", header: t("common.name"), sortable: true, sortValue: (r) => r.name, render: (r) => <span className="font-medium">{r.name}</span> },
+              { key: "name", header: t("common.name"), sortable: true, sortValue: (r) => r.name, render: (r) => <PartyNameLink kind="employee" id={r.id} name={r.name} /> },
               { key: "des", header: t("hr.designation"), sortable: true, sortValue: (r) => r.designation, render: (r) => r.designation },
               { key: "dept", header: t("hr.department"), sortable: true, sortValue: (r) => r.department, render: (r) => r.department },
               { key: "join", header: t("hr.joined"), sortable: true, sortValue: (r) => r.joiningDate, render: (r) => formatDate(r.joiningDate) },
@@ -254,7 +258,13 @@ export function HrPage() {
                 className: actionsColumnClass,
                 render: (r) => (
                   <RowActions
+                    onView={() => navigate({ to: "/hr/$id", params: { id: r.id } })}
                     onEdit={() => startEdit(r)}
+                    extras={[{
+                      label: t("hr.statement"),
+                      icon: <FileText className="h-3.5 w-3.5" />,
+                      onClick: () => navigate({ to: "/hr/$id/statement", params: { id: r.id } }),
+                    }]}
                     onDelete={() => {
                       if (confirm(t("hr.deleteConfirm"))) removeEmp.mutate(r.id);
                     }}
@@ -309,7 +319,7 @@ export function HrPage() {
             dateKey={(r) => r.paidAt ?? `${r.month}-01`}
             columns={[
               { key: "month", header: t("hr.month"), sortable: true, sortValue: (r) => r.month, render: (r) => r.month },
-              { key: "name", header: t("hr.employee"), sortable: true, sortValue: (r) => r.employeeName, render: (r) => r.employeeName },
+              { key: "name", header: t("hr.employee"), sortable: true, sortValue: (r) => r.employeeName, render: (r) => <PartyNameLink kind="employee" id={r.employeeId} name={r.employeeName} /> },
               { key: "basic", header: t("hr.basicSalary"), sortable: true, sortValue: (r) => r.basic, render: (r) => formatCurrency(r.basic), className: "text-right" },
               { key: "net", header: t("hr.net"), sortable: true, sortValue: (r) => r.net, render: (r) => formatCurrency(r.net), className: "text-right" },
               { key: "st", header: t("common.status"), render: (r) => (
