@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
+import { Printer } from "lucide-react";
 import { deliveryService } from "@/services/delivery.service";
 import { productService } from "@/services/product.service";
 import { cylinderService } from "@/services/cylinder.service";
@@ -11,7 +12,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/common/PageHeader";
-import { BrandLogo } from "@/components/common/BrandLogo";
+import { PrintDocHeader } from "@/components/common/PrintDocHeader";
+import { PartyNameLink } from "@/components/common/PartyNameLink";
 import { formatDateTime } from "@/utils/formatters";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -77,53 +79,63 @@ export function DeliveryChallan({ id }: { id: string }) {
             {canConfirm && (
               <Button disabled={confirm.isPending} onClick={startConfirm}>{t("deliveries.confirm")}</Button>
             )}
+            <Button variant="outline" onClick={() => window.print()}>
+              <Printer className="mr-1 h-4 w-4" />
+              {t("common.print")}
+            </Button>
             <Badge>{t(`status.${d.status}` as any)}</Badge>
           </div>
         }
       />
-      <Card><CardContent className="pt-6 space-y-4">
-        <div className="flex items-center gap-3 border-b pb-4">
-          <BrandLogo size="md" />
-          <div>
-            <p className="font-display text-sm font-semibold">{t("brand.name")}</p>
-            <p className="text-[11px] text-muted-foreground">{t("brand.tagline")}</p>
-          </div>
-        </div>
-        <div className="grid gap-4 md:grid-cols-4 text-sm">
-          <Info label={t("deliveries.driver")} value={d.driverName} />
-          <Info label={t("deliveries.vehicle")} value={d.vehicleNo} />
-          <Info
-            label={t("sales.orderNo")}
-            value={d.salesOrderId ? (
-              <Link className="font-medium text-primary underline-offset-2 hover:underline" to="/sales/$id" params={{ id: d.salesOrderId }}>
-                {d.salesOrderId}
-              </Link>
-            ) : "—"}
+      <Card className="print-sheet">
+        <CardContent className="space-y-4 pt-6">
+          <PrintDocHeader
+            title={t("deliveries.title")}
+            subtitle={`${t("deliveries.challanNo")}: ${d.challanNo}`}
+            right={<Badge className="no-print">{t(`status.${d.status}` as any)}</Badge>}
           />
-          <Info label={t("common.date")} value={d.confirmedAt ? formatDateTime(d.confirmedAt) : "—"} />
-        </div>
-        <Table>
-          <TableHeader><TableRow>
-            <TableHead>{t("sales.item")}</TableHead>
-            <TableHead>{t("cylinders.serial")}</TableHead>
-            <TableHead className="text-right">{t("common.quantity")}</TableHead>
-          </TableRow></TableHeader>
-          <TableBody>
-            {d.items.map((it, i) => (
-              <TableRow key={i}>
-                <TableCell>{it.productName}</TableCell>
-                <TableCell className="font-mono text-xs">{serialsOf(it.cylinderIds)}</TableCell>
-                <TableCell className="text-right">{it.quantity}</TableCell>
+          <div className="grid gap-4 text-sm md:grid-cols-2 lg:grid-cols-4">
+            <Info
+              label={t("common.customer")}
+              value={<PartyNameLink kind="customer" id={d.customerId} name={d.customerName} />}
+            />
+            <Info label={t("deliveries.driver")} value={d.driverName} />
+            <Info label={t("deliveries.vehicle")} value={d.vehicleNo} />
+            <Info
+              label={t("sales.orderNo")}
+              value={d.salesOrderId ? (
+                <Link className="font-medium text-primary underline-offset-2 hover:underline" to="/sales/$id" params={{ id: d.salesOrderId }}>
+                  {d.salesOrderId}
+                </Link>
+              ) : "—"}
+            />
+            <Info label={t("common.date")} value={d.confirmedAt ? formatDateTime(d.confirmedAt) : "—"} />
+          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t("sales.item")}</TableHead>
+                <TableHead>{t("cylinders.serial")}</TableHead>
+                <TableHead className="text-right">{t("common.quantity")}</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        <div className="flex justify-end">
-          <Button onClick={startConfirm} disabled={!canConfirm || confirm.isPending}>
-            {canConfirm ? t("deliveries.confirm") : t(`status.${d.status}` as any)}
-          </Button>
-        </div>
-      </CardContent></Card>
+            </TableHeader>
+            <TableBody>
+              {d.items.map((it, i) => (
+                <TableRow key={i}>
+                  <TableCell>{it.productName}</TableCell>
+                  <TableCell className="font-mono text-xs">{serialsOf(it.cylinderIds)}</TableCell>
+                  <TableCell className="text-right">{it.quantity}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          <div className="no-print flex justify-end">
+            <Button onClick={startConfirm} disabled={!canConfirm || confirm.isPending}>
+              {canConfirm ? t("deliveries.confirm") : t(`status.${d.status}` as any)}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
       {d && (
         <DeliveryCylinderDialog
           delivery={d}

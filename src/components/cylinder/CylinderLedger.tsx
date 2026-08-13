@@ -122,7 +122,7 @@ export function CylinderLedger({ range }: { range: DateRange }) {
 
   return (
     <div className="space-y-5">
-      <p className="text-xs text-muted-foreground">{t("cylinders.ledgerHint")}</p>
+      <p className="no-print text-xs text-muted-foreground">{t("cylinders.ledgerHint")}</p>
 
       <form
         className="no-print space-y-3 rounded-xl border bg-card/60 p-3"

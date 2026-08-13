@@ -25,7 +25,7 @@ export function PageHeader({
   const label = backLabel ?? t("common.back");
 
   return (
-    <div className="mb-5 space-y-3 sm:mb-6">
+    <div className="page-header mb-5 space-y-3 no-print sm:mb-6">
       {backTo && (
         <Button variant="ghost" size="sm" className="-ml-2 h-8 gap-1.5 px-2 text-muted-foreground" asChild>
           {typeof backTo === "string" ? (

@@ -20,8 +20,11 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { PageHeader } from "@/components/common/PageHeader";
+import { PrintDocHeader } from "@/components/common/PrintDocHeader";
+import { PartyNameLink } from "@/components/common/PartyNameLink";
 import type { PaymentMethod } from "@/types";
 import { useT } from "@/i18n";
+import { Printer } from "lucide-react";
 
 export function PurchaseView({ id }: { id: string }) {
   const t = useT();
@@ -92,17 +95,37 @@ export function PurchaseView({ id }: { id: string }) {
                 <Link to="/purchases/$id/edit" params={{ id: po.id }}>{t("common.edit")}</Link>
               </Button>
             )}
-            <Button variant="outline" asChild className="no-print">
+            <Button variant="outline" asChild>
               <Link to="/suppliers/$id/statement" params={{ id: po.supplierId }}>{t("suppliers.statement")}</Link>
             </Button>
-            <Button variant="outline" onClick={() => window.print()} className="no-print">{t("common.print")}</Button>
+            <Button variant="outline" onClick={() => window.print()}>
+              <Printer className="mr-1 h-4 w-4" />
+              {t("common.print")}
+            </Button>
             <Badge>{t(`status.${po.status}` as any)}</Badge>
           </div>
         }
       />
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2"><CardContent className="pt-6 space-y-4">
-          {po.grnNo && <p className="text-sm text-muted-foreground">GRN: <span className="font-mono">{po.grnNo}</span></p>}
+        <Card className="print-sheet lg:col-span-2"><CardContent className="space-y-4 pt-6">
+          <PrintDocHeader
+            title={t("purchases.title")}
+            subtitle={`${po.orderNo}${po.grnNo ? ` · GRN ${po.grnNo}` : ""} · ${formatDate(po.date)}`}
+            right={<Badge className="no-print">{t(`status.${po.status}` as any)}</Badge>}
+          />
+          <div className="grid gap-4 text-sm md:grid-cols-2">
+            <div>
+              <p className="text-xs uppercase text-muted-foreground">{t("common.supplier")}</p>
+              <p className="font-medium">
+                <PartyNameLink kind="supplier" id={po.supplierId} name={po.supplierName} />
+              </p>
+            </div>
+            <div>
+              <p className="text-xs uppercase text-muted-foreground">{t("purchases.poNo")}</p>
+              <p className="font-mono">{po.orderNo}</p>
+              {po.grnNo && <p className="mt-1 font-mono text-xs text-muted-foreground">GRN: {po.grnNo}</p>}
+            </div>
+          </div>
           <Table>
             <TableHeader><TableRow>
               <TableHead>{t("sales.item")}</TableHead>

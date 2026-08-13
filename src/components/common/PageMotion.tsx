@@ -65,7 +65,7 @@ export function PageMotion({ children }: { children: ReactNode }) {
   }, [pathname]);
 
   return (
-    <div ref={ref} className="will-change-[transform,opacity]">
+    <div ref={ref} className="page-motion will-change-[transform,opacity]">
       {children}
     </div>
   );

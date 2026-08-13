@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Plus } from "lucide-react";
+import { Plus, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { cylinderService } from "@/services/cylinder.service";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/common/PageHeader";
+import { PrintDocHeader } from "@/components/common/PrintDocHeader";
 import { DataTable } from "@/components/common/DataTable";
 import { RowActions, actionsColumnClass } from "@/components/common/RowActions";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
@@ -43,22 +44,37 @@ export function CylinderRegistry() {
       <PageHeader
         title={t("cylinders.title")}
         description={t("cylinders.desc")}
-        actions={<Button asChild><Link to="/cylinders/new"><Plus className="mr-1 h-4 w-4" /> {t("cylinders.new")}</Link></Button>}
+        actions={
+          <div className="flex flex-wrap gap-2">
+            {tab === "tracking" && (
+              <Button variant="outline" onClick={() => window.print()}>
+                <Printer className="mr-1 h-4 w-4" />
+                {t("common.print")}
+              </Button>
+            )}
+            <Button asChild>
+              <Link to="/cylinders/new"><Plus className="mr-1 h-4 w-4" /> {t("cylinders.new")}</Link>
+            </Button>
+          </div>
+        }
       />
-      <div className="mb-4 flex flex-wrap gap-2">
-        <Button size="sm" variant={tab === "tracking" ? "default" : "outline"} onClick={() => setTab("tracking")}>
-          {t("cylinders.trackingTab")}
-        </Button>
-        <Button size="sm" variant={tab === "registry" ? "default" : "outline"} onClick={() => setTab("registry")}>
-          {t("cylinders.registryTab")}
-        </Button>
-      </div>
+        <div className="no-print mb-4 flex flex-wrap gap-2">
+          <Button size="sm" variant={tab === "tracking" ? "default" : "outline"} onClick={() => setTab("tracking")}>
+            {t("cylinders.trackingTab")}
+          </Button>
+          <Button size="sm" variant={tab === "registry" ? "default" : "outline"} onClick={() => setTab("registry")}>
+            {t("cylinders.registryTab")}
+          </Button>
+        </div>
       {tab === "tracking" && (
         <div className="space-y-4">
-          <div className="rounded-xl border bg-card/60 p-3">
+          <div className="no-print rounded-xl border bg-card/60 p-3">
             <DateRangeFilter value={range} onChange={setRange} />
           </div>
-          <CylinderLedger range={range} />
+          <div className="print-sheet">
+            <PrintDocHeader title={t("reports.cylinder")} className="mb-4 !hidden print:!flex" />
+            <CylinderLedger range={range} />
+          </div>
         </div>
       )}
       {tab === "registry" && (

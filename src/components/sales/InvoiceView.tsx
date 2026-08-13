@@ -13,13 +13,14 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { PageHeader } from "@/components/common/PageHeader";
-import { BrandLogo } from "@/components/common/BrandLogo";
+import { PrintDocHeader } from "@/components/common/PrintDocHeader";
 import { PartyNameLink } from "@/components/common/PartyNameLink";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import type { PaymentMethod, SalesStatus } from "@/types";
 import { useT } from "@/i18n";
+import { Printer } from "lucide-react";
 
 export function InvoiceView({ id }: { id: string }) {
   const t = useT();
@@ -93,23 +94,21 @@ export function InvoiceView({ id }: { id: string }) {
             <Button variant="outline" asChild>
               <Link to="/deliveries/new" search={{ salesOrderId: order.id }}>{t("sales.createDelivery")}</Link>
             </Button>
-            <Button variant="outline" onClick={() => window.print()}>{t("common.print")}</Button>
+            <Button variant="outline" onClick={() => window.print()}>
+              <Printer className="mr-1 h-4 w-4" />
+              {t("common.print")}
+            </Button>
           </div>
         }
       />
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2"><CardContent className="pt-6 space-y-4">
-          <div className="flex items-start justify-between">
-            <div className="flex items-start gap-3">
-              <BrandLogo size="lg" />
-              <div>
-                <h2 className="text-xl font-bold">{t("brand.name")}</h2>
-                <p className="text-xs text-muted-foreground">{t("brand.tagline")}</p>
-              </div>
-            </div>
-            <Badge>{t(`status.${order.status}` as any)}</Badge>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2 text-sm">
+        <Card className="print-sheet lg:col-span-2"><CardContent className="space-y-4 pt-6">
+          <PrintDocHeader
+            title={order.status === "draft" ? t("sales.quotationLabel") : t("sales.invoice")}
+            subtitle={`${t("sales.invoiceNo")}: ${order.orderNo} · ${formatDate(order.date)}`}
+            right={<Badge className="no-print">{t(`status.${order.status}` as any)}</Badge>}
+          />
+          <div className="grid gap-4 text-sm md:grid-cols-2">
             <div>
               <p className="text-xs uppercase text-muted-foreground">{t("sales.billTo")}</p>
               <p className="font-medium">
@@ -119,6 +118,7 @@ export function InvoiceView({ id }: { id: string }) {
             <div>
               <p className="text-xs uppercase text-muted-foreground">{t("sales.invoiceNo")}</p>
               <p className="font-mono">{order.orderNo}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{formatDate(order.date)}</p>
             </div>
           </div>
           <Table>

@@ -106,7 +106,7 @@ export function DataTable<T extends { id: string }>({
   return (
     <Card className="overflow-hidden p-0">
       {showToolbar && (
-        <div className="flex flex-col gap-3 border-b p-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="no-print flex flex-col gap-3 border-b p-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           {searchKeys ? (
             <div className="relative w-full max-w-sm">
               <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

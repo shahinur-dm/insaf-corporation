@@ -35,7 +35,7 @@ export function StockReport({ range }: { range: DateRange }) {
 
   return (
     <div className="space-y-5">
-      <p className="text-xs text-muted-foreground">{t("reports.stockHint")}</p>
+      <p className="no-print text-xs text-muted-foreground">{t("reports.stockHint")}</p>
       {rows.map((p) => (
         <section key={p.id} className="overflow-hidden rounded-xl border">
           <div className="grid grid-cols-2 gap-3 border-b bg-muted/40 p-3 sm:grid-cols-6 sm:items-center">

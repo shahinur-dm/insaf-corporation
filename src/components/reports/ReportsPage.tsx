@@ -12,6 +12,7 @@ import { PageHeader } from "@/components/common/PageHeader";
 import { DataTable } from "@/components/common/DataTable";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { PartyNameLink } from "@/components/common/PartyNameLink";
+import { PrintDocHeader } from "@/components/common/PrintDocHeader";
 import { StockReport } from "@/components/reports/StockReport";
 import { CylinderLedger } from "@/components/cylinder/CylinderLedger";
 import { Card, CardContent } from "@/components/ui/card";
@@ -19,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDate } from "@/utils/formatters";
 import { useT } from "@/i18n";
 import { EMPTY_DATE_RANGE, filterByDateRange, type DateRange } from "@/lib/date-range";
+import { Printer } from "lucide-react";
 
 const reports = [
   { id: "sales", key: "reports.sales" }, { id: "purchase", key: "reports.purchase" },
@@ -258,11 +260,20 @@ export function ReportsPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title={t("reports.title")} description={t("reports.desc")} />
-      <div className="rounded-xl border bg-card/60 p-3">
+      <PageHeader
+        title={t("reports.title")}
+        description={t("reports.desc")}
+        actions={
+          <Button variant="outline" onClick={() => window.print()}>
+            <Printer className="mr-1 h-4 w-4" />
+            {t("common.print")}
+          </Button>
+        }
+      />
+      <div className="no-print rounded-xl border bg-card/60 p-3">
         <DateRangeFilter value={range} onChange={setRange} />
       </div>
-      <div className="flex flex-wrap gap-2">
+      <div className="no-print flex flex-wrap gap-2">
         {reports.map((r) => (
           <Button key={r.id} size="sm" variant={active === r.id ? "default" : "outline"} onClick={() => setActive(r.id)}>
             {t(r.key)}
@@ -270,8 +281,16 @@ export function ReportsPage() {
         ))}
       </div>
 
-      <Card>
-        <CardContent className="pt-6">
+      <Card className="print-sheet">
+        <CardContent className="space-y-5 pt-6">
+          <PrintDocHeader
+            title={t(reports.find((r) => r.id === active)?.key ?? "reports.title")}
+            subtitle={
+              range.preset === "all"
+                ? t("filter.all")
+                : `${range.from ? formatDate(range.from) : "—"} – ${range.to ? formatDate(range.to) : "—"}`
+            }
+          />
           {active === "sales" && (
             <DataTable
               rows={sales}
@@ -434,7 +453,7 @@ export function ReportsPage() {
             <div className="mx-auto max-w-3xl border border-muted p-8 rounded bg-card/40">
               <div className="text-center mb-8">
                 <h2 className="text-2xl font-bold uppercase tracking-wider">{t("reports.pnl")}</h2>
-                <p className="text-muted-foreground">{range.from ? formatDate(range.from.toISOString()) : ""} - {range.to ? formatDate(range.to.toISOString()) : "Today"}</p>
+                <p className="text-muted-foreground">{range.from ? formatDate(range.from) : ""} - {range.to ? formatDate(range.to) : "Today"}</p>
               </div>
               <table className="w-full text-sm">
                 <tbody>
@@ -493,16 +512,13 @@ export function ReportsPage() {
                   </tr>
                 </tbody>
               </table>
-              <div className="mt-8 flex justify-end no-print">
-                 <Button onClick={() => window.print()}>{t("common.print")}</Button>
-              </div>
             </div>
           )}
           {active === "balanceSheet" && (
             <div className="mx-auto max-w-3xl border border-muted p-8 rounded bg-card/40">
               <div className="text-center mb-8">
                 <h2 className="text-2xl font-bold uppercase tracking-wider">{t("reports.balanceSheet")}</h2>
-                <p className="text-muted-foreground">{range.from ? formatDate(range.from.toISOString()) : ""} - {range.to ? formatDate(range.to.toISOString()) : "Today"}</p>
+                <p className="text-muted-foreground">{range.from ? formatDate(range.from) : ""} - {range.to ? formatDate(range.to) : "Today"}</p>
               </div>
               <table className="w-full text-sm">
                 <tbody>
@@ -575,16 +591,13 @@ export function ReportsPage() {
                   </tr>
                 </tbody>
               </table>
-              <div className="mt-8 flex justify-end no-print">
-                 <Button onClick={() => window.print()}>{t("common.print")}</Button>
-              </div>
             </div>
           )}
           {active === "cashFlow" && (
             <div className="mx-auto max-w-3xl border border-muted p-8 rounded bg-card/40">
               <div className="text-center mb-8">
                 <h2 className="text-2xl font-bold uppercase tracking-wider">{t("reports.cashFlow")}</h2>
-                <p className="text-muted-foreground">{range.from ? formatDate(range.from.toISOString()) : ""} - {range.to ? formatDate(range.to.toISOString()) : "Today"}</p>
+                <p className="text-muted-foreground">{range.from ? formatDate(range.from) : ""} - {range.to ? formatDate(range.to) : "Today"}</p>
               </div>
               <table className="w-full text-sm">
                 <tbody>
@@ -630,16 +643,13 @@ export function ReportsPage() {
                   </tr>
                 </tbody>
               </table>
-              <div className="mt-8 flex justify-end no-print">
-                 <Button onClick={() => window.print()}>{t("common.print")}</Button>
-              </div>
             </div>
           )}
           {active === "trialBalance" && (
             <div className="mx-auto max-w-3xl border border-muted p-8 rounded bg-card/40">
               <div className="text-center mb-8">
                 <h2 className="text-2xl font-bold uppercase tracking-wider">{t("reports.trialBalance")}</h2>
-                <p className="text-muted-foreground">{range.from ? formatDate(range.from.toISOString()) : ""} - {range.to ? formatDate(range.to.toISOString()) : "Today"}</p>
+                <p className="text-muted-foreground">{range.from ? formatDate(range.from) : ""} - {range.to ? formatDate(range.to) : "Today"}</p>
               </div>
               <table className="w-full text-sm">
                 <thead>
@@ -664,9 +674,6 @@ export function ReportsPage() {
                   </tr>
                 </tbody>
               </table>
-              <div className="mt-8 flex justify-end no-print">
-                 <Button onClick={() => window.print()}>{t("common.print")}</Button>
-              </div>
             </div>
           )}
           {active === "expense" && (

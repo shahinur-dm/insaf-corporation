@@ -707,37 +707,114 @@ body.login-route {
 }
 
 @media print {
+  html,
   body {
-    background-color: white !important;
+    background: white !important;
     color: black !important;
+    height: auto !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
+
+  .app-atmosphere,
+  .app-navbar,
+  .app-sidebar,
+  [data-sidebar="sidebar"],
+  [data-sidebar="rail"],
+  [data-sidebar="trigger"],
+  [data-sidebar="menu"],
+  .peer[data-side],
+  [data-sonner-toaster],
+  .page-header,
+  .no-print,
+  button:not(.print-keep),
+  .print\:hidden {
+    display: none !important;
+  }
+
+  .app-shell {
+    display: block !important;
+    min-height: 0 !important;
+  }
+
+  .group\/sidebar-wrapper,
+  [data-state][class*="group/sidebar-wrapper"] {
+    display: block !important;
+    min-height: 0 !important;
+  }
+
+  .app-main-panel,
+  .app-main-panel main,
+  main,
+  .page-motion {
+    background: white !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    box-shadow: none !important;
+    border: none !important;
+    overflow: visible !important;
+    transform: none !important;
+    filter: none !important;
+    opacity: 1 !important;
+  }
+
+  .print-sheet,
   .statement-sheet {
     border: none !important;
     box-shadow: none !important;
+    background: white !important;
+    border-radius: 0 !important;
   }
+
+  .print-sheet .bg-muted\/40,
+  .print-sheet .bg-muted\/30,
+  .print-sheet .bg-muted\/20,
+  .print-sheet .bg-muted\/10,
+  .statement-sheet .bg-muted\/40 {
+    background: transparent !important;
+  }
+
   details.statement-month > .statement-month-body,
   details.fold-panel > .fold-panel-body {
     display: block !important;
   }
-  .app-navbar,
-  .app-sidebar,
-  [data-sidebar="sidebar"],
-  [data-sidebar="menu"],
-  button,
-  .no-print {
+
+  details.statement-month > summary,
+  details.fold-panel > summary {
+    list-style: none;
+  }
+
+  /* Dialog / payslip: strip chrome, print body only */
+  [data-radix-dialog-overlay],
+  [data-state="open"][class*="fixed"][class*="inset-0"]:not([role="dialog"]) {
     display: none !important;
   }
-  .app-main-panel {
-    background: white !important;
+
+  [role="dialog"] {
+    position: static !important;
+    inset: auto !important;
+    transform: none !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
     margin: 0 !important;
     padding: 0 !important;
-    box-shadow: none !important;
-  }
-  .bg-card {
     border: none !important;
     box-shadow: none !important;
+    overflow: visible !important;
+    background: white !important;
   }
+
+  a {
+    color: inherit !important;
+    text-decoration: none !important;
+  }
+
   @page {
-    margin: 1cm;
+    margin: 12mm;
   }
 }

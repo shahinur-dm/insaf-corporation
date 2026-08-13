@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronRight, FileText, Printer } from "lucide-react";
+import { ChevronRight, Printer } from "lucide-react";
 import { customerService } from "@/services/customer.service";
 import { supplierService } from "@/services/supplier.service";
 import { hrService } from "@/services/hr.service";
@@ -10,7 +10,7 @@ import { purchaseService } from "@/services/purchase.service";
 import { accountingService } from "@/services/accounting.service";
 import { PageHeader } from "@/components/common/PageHeader";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
-import { BrandLogo } from "@/components/common/BrandLogo";
+import { PrintDocHeader } from "@/components/common/PrintDocHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -129,27 +129,19 @@ export function PartyStatement({ kind, id }: { kind: PartyKind; id: string }) {
         <DateRangeFilter value={range} onChange={setRange} />
       </div>
 
-      <Card className="statement-sheet">
+      <Card className="print-sheet statement-sheet">
         <CardContent className="space-y-5 pt-6">
-          <div className="flex flex-wrap items-start justify-between gap-4 border-b pb-4">
-            <div className="flex items-start gap-3">
-              <BrandLogo size="lg" className="rounded-lg" />
-              <div>
-                <p className="font-display text-base font-semibold">{t("brand.name")}</p>
-                <p className="text-xs text-muted-foreground">{t("brand.tagline")}</p>
-                <p className="mt-2 inline-flex items-center gap-1.5 text-sm font-semibold">
-                  <FileText className="h-4 w-4 text-primary" />
-                  {t("statement.title")}
-                </p>
+          <PrintDocHeader
+            title={t("statement.title")}
+            right={
+              <div className="text-sm text-right">
+                <p className="font-display text-base font-semibold">{party.name}</p>
+                <p className="text-muted-foreground">{party.phone}</p>
+                {party.address && <p className="max-w-xs text-muted-foreground">{party.address}</p>}
+                {party.gstin && <p className="text-muted-foreground">{t("customers.gstin")}: {party.gstin}</p>}
               </div>
-            </div>
-            <div className="text-sm">
-              <p className="font-display text-base font-semibold">{party.name}</p>
-              <p className="text-muted-foreground">{party.phone}</p>
-              {party.address && <p className="max-w-xs text-muted-foreground">{party.address}</p>}
-              {party.gstin && <p className="text-muted-foreground">{t("customers.gstin")}: {party.gstin}</p>}
-            </div>
-          </div>
+            }
+          />
 
           <div className="grid gap-3 sm:grid-cols-3">
             <SummaryTile label={t("statement.opening")} value={formatCurrency(Math.abs(statement.openingBalance))} />
