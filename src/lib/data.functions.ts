@@ -4,7 +4,7 @@ import { allSeed } from "./seed-data";
 import { requireUser } from "./session.server";
 import type {
   Customer, Supplier, Product, SalesOrder, DashboardStats, StockAlert,
-  Expense, LedgerEntry, Cylinder, PurchaseOrder, Voucher, Account,
+  Expense, LedgerEntry, Cylinder, PurchaseOrder, Voucher, Account, Delivery,
 } from "@/types";
 import { isBankBookAccount, isCashBookAccount } from "@/lib/money-accounts";
 
@@ -84,7 +84,11 @@ async function collUpdate<T>(name: CollName, id: string, patch: any): Promise<T>
 async function collRemove(name: CollName, id: string): Promise<void> {
   const db = await getDb();
   await ensureSeeded();
-  await db.collection(name).deleteOne({ id: String(id) });
+  if (!id) throw new Error("Missing record id");
+  const result = await db.collection(name).deleteOne({ id: String(id) });
+  if (result.deletedCount === 0) {
+    throw new Error(`Record not found (${name}/${id})`);
+  }
 }
 
 // ---------- Generic CRUD server functions ----------

@@ -88,16 +88,27 @@ export type RouterContext = {
   user: AuthUser | null;
 };
 
+function redirectPathFromLocation(location: { href: string; pathname: string; searchStr?: string; hash?: string }) {
+  try {
+    const url = new URL(location.href, "http://localhost");
+    const path = `${url.pathname}${url.search}${url.hash}`;
+    return path.startsWith("/") ? path : location.pathname || "/";
+  } catch {
+    return location.pathname || "/";
+  }
+}
+
 export const Route = createRootRouteWithContext<RouterContext>()({
   beforeLoad: async ({ location }): Promise<{ user: AuthUser | null }> => {
     const isLogin = location.pathname === "/login";
+    const redirectTo = redirectPathFromLocation(location);
     try {
       const session = await getSessionFn();
       const user = session?.user ?? null;
       if (!user && !isLogin) {
         throw redirect({
           to: "/login",
-          search: { redirect: location.href },
+          search: { redirect: redirectTo },
         });
       }
       return { user };
@@ -105,7 +116,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
       if (e && typeof e === "object" && "to" in e) throw e;
       // Session/Mongo failure should not block the login homepage.
       if (isLogin) return { user: null };
-      throw redirect({ to: "/login", search: { redirect: location.href } });
+      throw redirect({ to: "/login", search: { redirect: redirectTo } });
     }
   },
   head: () => ({
@@ -170,7 +181,7 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <SmoothScrollProvider>
         {isLogin ? <Outlet /> : <Layout><Outlet /></Layout>}
-        {mounted && <Toaster richColors position="top-right" />}
+        {mounted && <Toaster richColors position={isLogin ? "bottom-center" : "top-right"} />}
       </SmoothScrollProvider>
     </QueryClientProvider>
   );

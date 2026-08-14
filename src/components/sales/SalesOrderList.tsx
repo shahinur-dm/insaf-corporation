@@ -28,12 +28,16 @@ export function SalesOrderList() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["sales"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["ledger"] });
+      qc.invalidateQueries({ queryKey: ["vouchers"] });
       toast.success(t("sales.deleted"));
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
   const canEdit = (r: SalesOrder) => r.status === "draft" || r.status === "confirmed";
+  const canDelete = (r: SalesOrder) => r.status !== "paid";
 
   return (
     <div>
@@ -68,7 +72,7 @@ export function SalesOrderList() {
               <RowActions
                 onView={() => navigate({ to: "/sales/$id", params: { id: r.id } })}
                 onEdit={canEdit(r) ? () => navigate({ to: "/sales/$id/edit", params: { id: r.id } }) : undefined}
-                onDelete={r.status === "draft" || r.status === "cancelled" ? () => {
+                onDelete={canDelete(r) ? () => {
                   if (confirm(t("sales.deleteConfirm"))) remove.mutate(r.id);
                 } : undefined}
                 deleteDisabled={remove.isPending}

@@ -57,6 +57,19 @@ const ROLE_META: Record<AppRole, { icon: typeof Shield; tone: string; glow: stri
 
 const QUICK_PASSWORD = "insaf123";
 
+/** Keep post-login navigate targets as same-origin paths only. */
+function safeRedirectPath(raw: string | undefined) {
+  if (!raw) return "/";
+  try {
+    if (raw.startsWith("/") && !raw.startsWith("//")) return raw;
+    const url = new URL(raw, typeof window !== "undefined" ? window.location.origin : "http://localhost");
+    if (typeof window !== "undefined" && url.origin !== window.location.origin) return "/";
+    return `${url.pathname}${url.search}${url.hash}` || "/";
+  } catch {
+    return "/";
+  }
+}
+
 function LoginPage() {
   const t = useT();
   const { locale, setLocale } = useI18n();
@@ -126,12 +139,18 @@ function LoginPage() {
   }, []);
 
   const finishGate = useCallback(async () => {
-    const target = pendingNav || "/";
+    const target = safeRedirectPath(pendingNav || redirectTo || "/");
     // Fresh session context + force dashboard queries to load after cookie is set
     await qc.invalidateQueries();
     await router.invalidate();
     await navigate({ to: target });
-  }, [navigate, pendingNav, qc, router]);
+  }, [navigate, pendingNav, qc, redirectTo, router]);
+
+  const scrollFieldIntoView = (el: HTMLElement | null) => {
+    if (!el || typeof window === "undefined") return;
+    if (window.matchMedia("(min-width: 1024px)").matches) return;
+    window.setTimeout(() => el.scrollIntoView({ block: "center", behavior: "smooth" }), 120);
+  };
 
   const doLogin = async (user: string, pass: string, meta?: { displayName: string; role: AppRole }) => {
     setPending(true);
@@ -146,7 +165,7 @@ function LoginPage() {
         name: result.user.displayName || meta?.displayName || user,
         role: result.user.role || meta?.role,
       });
-      setPendingNav(redirectTo || "/");
+      setPendingNav(safeRedirectPath(redirectTo || "/"));
       // Do NOT router.invalidate() here — login beforeLoad would redirect mid-gate
       // and dashboard mounts without a clean query refetch.
       setGateActive(true);
@@ -167,7 +186,7 @@ function LoginPage() {
     <div ref={pageRef} className="login-page login-ambient relative w-full text-slate-50">
       <div className="login-grid-lines pointer-events-none absolute inset-0" />
 
-      <div className="relative z-10 mx-auto w-full max-w-[1400px] px-3 py-4 pb-10 sm:px-5 sm:py-5">
+      <div className="relative z-10 mx-auto w-full max-w-[1400px] px-3 py-4 pb-12 sm:px-5 sm:py-5 lg:pb-10">
         <header data-login-enter className="mb-4 flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2.5">
             <BrandLogo size="lg" className="rounded-lg shadow-lg shadow-sky-900/40" />
@@ -180,7 +199,7 @@ function LoginPage() {
             type="button"
             variant="outline"
             size="sm"
-            className="h-8 shrink-0 gap-1 border-slate-700/80 bg-slate-900/60 px-2.5 text-xs hover:bg-slate-800"
+            className="h-9 shrink-0 gap-1 border-slate-700/80 bg-slate-900/60 px-2.5 text-xs hover:bg-slate-800"
             onClick={() => setLocale(locale === "bn" ? "en" : "bn")}
           >
             <Languages className="h-3.5 w-3.5" />
@@ -203,9 +222,10 @@ function LoginPage() {
                     id="username"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
+                    onFocus={(e) => scrollFieldIntoView(e.currentTarget)}
                     autoComplete="username"
                     disabled={gateActive}
-                    className="h-10 border-slate-700/80 bg-slate-950/80 text-sm"
+                    className="h-11 border-slate-700/80 bg-slate-950/80 text-base sm:h-10 sm:text-sm"
                   />
                 </div>
                 <div className="space-y-1">
@@ -215,14 +235,15 @@ function LoginPage() {
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    onFocus={(e) => scrollFieldIntoView(e.currentTarget)}
                     autoComplete="current-password"
                     disabled={gateActive}
-                    className="h-10 border-slate-700/80 bg-slate-950/80 text-sm"
+                    className="h-11 border-slate-700/80 bg-slate-950/80 text-base sm:h-10 sm:text-sm"
                   />
                 </div>
                 <Button
                   type="submit"
-                  className="h-10 w-full bg-emerald-500 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-500/25 hover:bg-emerald-400"
+                  className="h-11 w-full bg-emerald-500 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-500/25 hover:bg-emerald-400 sm:h-10"
                   disabled={pending || gateActive}
                 >
                   {pending && !quickUser ? t("login.submitting") : t("login.submit")}
@@ -250,7 +271,7 @@ function LoginPage() {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-2.5 lg:grid-cols-4">
+            <div className="login-role-grid grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-2.5 lg:grid-cols-4">
               {QUICK_ACCESS.map((u) => {
                 const meta = ROLE_META[u.role] ?? ROLE_META.Auditor;
                 const Icon = meta.icon;
@@ -263,7 +284,7 @@ function LoginPage() {
                     disabled={pending || gateActive}
                     onClick={() => doLogin(u.username, QUICK_PASSWORD, u)}
                     className={cn(
-                      "login-role-btn group flex min-h-[100px] w-full min-w-0 flex-col rounded-xl border bg-gradient-to-br p-2.5 text-left sm:min-h-[108px] sm:p-3",
+                      "login-role-btn group flex min-h-[108px] w-full min-w-0 flex-col rounded-xl border bg-gradient-to-br p-3 text-left sm:min-h-[112px]",
                       "shadow-lg shadow-black/20",
                       meta.tone,
                       meta.glow,
@@ -271,23 +292,23 @@ function LoginPage() {
                     )}
                   >
                     <div className="flex w-full items-start justify-between gap-1">
-                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-950/50 text-emerald-300 sm:h-8 sm:w-8">
-                        <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-950/50 text-emerald-300">
+                        <Icon className="h-4 w-4" />
                       </div>
-                      <span className="min-w-0 truncate rounded border border-white/10 bg-black/25 px-1 py-0.5 text-[7px] font-medium uppercase tracking-wide text-slate-300 sm:text-[9px]">
+                      <span className="min-w-0 truncate rounded border border-white/10 bg-black/25 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-slate-300 sm:text-[10px]">
                         {u.role}
                       </span>
                     </div>
-                    <p className="mt-2 break-words text-[11px] font-semibold leading-tight sm:text-xs">{u.displayName}</p>
-                    <p className="truncate font-mono text-[9px] text-slate-500">{u.username}</p>
-                    <p className="mt-auto pt-2 text-[9px] font-medium text-emerald-300/80 group-hover:text-emerald-200 sm:text-[10px]">
-                      {busy ? t("login.submitting") : "→"}
+                    <p className="mt-2 break-words text-xs font-semibold leading-tight sm:text-sm">{u.displayName}</p>
+                    <p className="truncate font-mono text-[10px] text-slate-500">{u.username}</p>
+                    <p className="mt-auto pt-2 text-[10px] font-medium text-emerald-300/90 group-hover:text-emerald-200 group-active:text-emerald-200">
+                      {busy ? t("login.submitting") : t("login.tapToEnter")}
                     </p>
                   </button>
                 );
               })}
             </div>
-            <p className="mt-3 pb-2 text-center text-[9px] text-slate-600 sm:text-[10px]">
+            <p className="mt-3 pb-2 text-center text-[10px] text-slate-600">
               {t("login.quickPassHint")}
             </p>
           </section>

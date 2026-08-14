@@ -28,6 +28,7 @@ export function PurchaseList() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["purchases"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["ledger"] });
       toast.success(t("purchases.deleted"));
     },
     onError: (e: Error) => toast.error(e.message),

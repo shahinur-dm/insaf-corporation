@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { Printer } from "lucide-react";
+import { Printer, Trash2 } from "lucide-react";
 import { deliveryService } from "@/services/delivery.service";
+import { salesService } from "@/services/sales.service";
 import { productService } from "@/services/product.service";
 import { cylinderService } from "@/services/cylinder.service";
+import { customerService } from "@/services/customer.service";
 import { isCylinderProduct } from "@/lib/cylinder-product";
 import { DeliveryCylinderDialog } from "@/components/delivery/DeliveryCylinderDialog";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,8 +15,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/common/PageHeader";
 import { PrintDocHeader } from "@/components/common/PrintDocHeader";
+import { PrintMeta, PrintSignatures } from "@/components/common/PrintParts";
 import { PartyNameLink } from "@/components/common/PartyNameLink";
-import { formatDateTime } from "@/utils/formatters";
+import { formatDate, formatDateTime } from "@/utils/formatters";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -23,6 +26,7 @@ import { useT } from "@/i18n";
 export function DeliveryChallan({ id }: { id: string }) {
   const t = useT();
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [assignOpen, setAssignOpen] = useState(false);
   const { data: d, isLoading, isFetched } = useQuery({
     queryKey: ["deliveries", id],
@@ -30,6 +34,17 @@ export function DeliveryChallan({ id }: { id: string }) {
   });
   const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: productService.list });
   const { data: cylinders = [] } = useQuery({ queryKey: ["cylinders"], queryFn: cylinderService.list });
+  const { data: customer } = useQuery({
+    queryKey: ["customers", d?.customerId],
+    queryFn: () => customerService.get(d!.customerId),
+    enabled: !!d?.customerId,
+  });
+  const { data: salesOrder } = useQuery({
+    queryKey: ["sales", d?.salesOrderId],
+    queryFn: () => salesService.get(d!.salesOrderId!),
+    enabled: !!d?.salesOrderId,
+  });
+
   const confirm = useMutation({
     mutationFn: (payload?: { issuedIdsByItem?: string[][]; returnedIds?: string[] }) =>
       deliveryService.confirm(id, payload),
@@ -47,10 +62,21 @@ export function DeliveryChallan({ id }: { id: string }) {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const remove = useMutation({
+    mutationFn: () => deliveryService.remove(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["deliveries"] });
+      toast.success(t("deliveries.deleted"));
+      navigate({ to: "/deliveries" });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const needsCylinders = (d?.items || []).some((it) =>
     isCylinderProduct(products.find((p) => p.id === it.productId)),
   );
   const canConfirm = d && (d.status === "pending" || d.status === "in_transit");
+  const canDelete = d?.status === "pending";
   const startConfirm = () => {
     if (needsCylinders) setAssignOpen(true);
     else confirm.mutate(undefined);
@@ -61,6 +87,10 @@ export function DeliveryChallan({ id }: { id: string }) {
   if (isLoading) return <div className="p-6 text-sm text-muted-foreground">{t("common.loading")}</div>;
   if (isFetched && !d) return <div className="p-6 text-sm text-destructive">{t("deliveries.notFound")}</div>;
   if (!d) return null;
+
+  const soNo = salesOrder?.orderNo || "—";
+  const dispatchDate = d.confirmedAt ? formatDateTime(d.confirmedAt) : formatDate(d.date);
+  const busy = confirm.isPending || remove.isPending;
 
   return (
     <div>
@@ -77,58 +107,101 @@ export function DeliveryChallan({ id }: { id: string }) {
               </Button>
             )}
             {canConfirm && (
-              <Button disabled={confirm.isPending} onClick={startConfirm}>{t("deliveries.confirm")}</Button>
+              <Button disabled={busy} onClick={startConfirm}>{t("deliveries.confirm")}</Button>
             )}
             <Button variant="outline" onClick={() => window.print()}>
               <Printer className="mr-1 h-4 w-4" />
               {t("common.print")}
             </Button>
-            <Badge>{t(`status.${d.status}` as any)}</Badge>
+            {canDelete && (
+              <Button
+                variant="destructive"
+                disabled={busy}
+                onClick={() => {
+                  if (window.confirm(t("deliveries.deleteConfirm"))) remove.mutate();
+                }}
+              >
+                <Trash2 className="mr-1 h-4 w-4" />
+                {t("common.delete")}
+              </Button>
+            )}
+            <Badge className="no-print">{t(`status.${d.status}` as any)}</Badge>
           </div>
         }
       />
       <Card className="print-sheet">
-        <CardContent className="space-y-4 pt-6">
+        <CardContent className="space-y-5 pt-6">
           <PrintDocHeader
-            title={t("deliveries.title")}
+            title={t("doc.deliveryNote")}
             subtitle={`${t("deliveries.challanNo")}: ${d.challanNo}`}
-            right={<Badge className="no-print">{t(`status.${d.status}` as any)}</Badge>}
+            right={
+              <div className="text-right">
+                <p className="text-lg font-bold uppercase tracking-wide">{t("doc.deliveryNote")}</p>
+                <p className="font-mono text-sm">{d.challanNo}</p>
+                <Badge className="no-print mt-2">{t(`status.${d.status}` as any)}</Badge>
+              </div>
+            }
           />
-          <div className="grid gap-4 text-sm md:grid-cols-2 lg:grid-cols-4">
-            <Info
-              label={t("common.customer")}
-              value={<PartyNameLink kind="customer" id={d.customerId} name={d.customerName} />}
+
+          <div className="grid gap-4 text-sm md:grid-cols-2">
+            <div className="print-avoid-break space-y-1">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {t("doc.deliverTo")}
+              </p>
+              <p className="font-medium">
+                <PartyNameLink kind="customer" id={d.customerId} name={d.customerName} />
+              </p>
+              {customer?.phone && <p className="text-muted-foreground">{customer.phone}</p>}
+              {customer?.address && <p className="max-w-sm text-muted-foreground">{customer.address}</p>}
+            </div>
+            <PrintMeta
+              className="lg:grid-cols-2"
+              items={[
+                {
+                  label: t("doc.soNo"),
+                  value: d.salesOrderId ? (
+                    <Link
+                      className="font-mono text-primary underline-offset-2 hover:underline"
+                      to="/sales/$id"
+                      params={{ id: d.salesOrderId }}
+                    >
+                      {soNo}
+                    </Link>
+                  ) : "—",
+                },
+                { label: t("deliveries.driver"), value: d.driverName },
+                { label: t("deliveries.vehicle"), value: d.vehicleNo },
+                { label: t("doc.dispatchDate"), value: dispatchDate },
+              ]}
             />
-            <Info label={t("deliveries.driver")} value={d.driverName} />
-            <Info label={t("deliveries.vehicle")} value={d.vehicleNo} />
-            <Info
-              label={t("sales.orderNo")}
-              value={d.salesOrderId ? (
-                <Link className="font-medium text-primary underline-offset-2 hover:underline" to="/sales/$id" params={{ id: d.salesOrderId }}>
-                  {d.salesOrderId}
-                </Link>
-              ) : "—"}
-            />
-            <Info label={t("common.date")} value={d.confirmedAt ? formatDateTime(d.confirmedAt) : "—"} />
           </div>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t("sales.item")}</TableHead>
-                <TableHead>{t("cylinders.serial")}</TableHead>
-                <TableHead className="text-right">{t("common.quantity")}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {d.items.map((it, i) => (
-                <TableRow key={i}>
-                  <TableCell>{it.productName}</TableCell>
-                  <TableCell className="font-mono text-xs">{serialsOf(it.cylinderIds)}</TableCell>
-                  <TableCell className="text-right">{it.quantity}</TableCell>
+
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10">#</TableHead>
+                  <TableHead>{t("sales.item")}</TableHead>
+                  <TableHead>{t("cylinders.serial")}</TableHead>
+                  <TableHead className="text-right">{t("common.quantity")}</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {d.items.map((it, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="text-muted-foreground">{i + 1}</TableCell>
+                    <TableCell>{it.productName}</TableCell>
+                    <TableCell className="font-mono text-xs">{serialsOf(it.cylinderIds)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{it.quantity}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          <PrintSignatures left={t("doc.authorizedSign")} right={t("doc.receivedBy")} />
+          <p className="text-center text-[10px] text-muted-foreground">{t("doc.pageFooter")}</p>
+
           <div className="no-print flex justify-end">
             <Button onClick={startConfirm} disabled={!canConfirm || confirm.isPending}>
               {canConfirm ? t("deliveries.confirm") : t(`status.${d.status}` as any)}
@@ -145,15 +218,6 @@ export function DeliveryChallan({ id }: { id: string }) {
           onConfirm={(payload) => confirm.mutate(payload)}
         />
       )}
-    </div>
-  );
-}
-
-function Info({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div>
-      <p className="text-xs uppercase text-muted-foreground">{label}</p>
-      <div className="font-medium">{value}</div>
     </div>
   );
 }

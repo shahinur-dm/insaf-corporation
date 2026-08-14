@@ -393,6 +393,10 @@ export const salesService = {
     for (const entry of ledger.filter((e) => e.refType === "sales" && e.refId === id)) {
       await call("remove", "ledger", entry.id);
     }
+    const vouchers = await call<Voucher[]>("list", "vouchers");
+    for (const v of vouchers.filter((x) => x.refType === "sales" && x.refId === id)) {
+      await call("remove", "vouchers", v.id);
+    }
     return call<{ ok: true }>("remove", "sales", id);
   },
   setStatus: async (id: string, status: SalesStatus) => {
@@ -431,17 +435,35 @@ export const salesService = {
     else if (order.status === "confirmed" || order.status === "draft") status = "invoiced";
 
     const updated = await call<SalesOrder>("update", "sales", id, { paid, status });
+    const payDate = new Date().toISOString();
+    const account = method === "cheque" || method === "mobile" ? "bank" : method;
+    // Create printable money receipt first so ledger notes can tag voucherNo (safe void)
+    const receipt = await call<Voucher>("create", "vouchers", undefined, {
+      voucherNo: genOrderNo("MR"),
+      type: "receipt",
+      date: toVoucherDate(payDate),
+      account,
+      amount,
+      partyType: "customer",
+      partyId: order.customerId,
+      partyName: order.customerName,
+      notes: `Payment for ${order.orderNo}`,
+      refType: "sales",
+      refId: id,
+      refNo: order.orderNo,
+      createdAt: payDate,
+    });
     await postLedger({
-      date: new Date().toISOString(),
-      account: method === "cheque" || method === "mobile" ? "bank" : method,
+      date: payDate,
+      account,
       direction: "in",
       amount,
       category: "collection",
       refType: "sales",
       refId: id,
-      notes: `Payment for ${order.orderNo}`,
+      notes: `Payment for ${order.orderNo} (${receipt.voucherNo})`,
     });
-    return updated;
+    return { order: updated, receipt };
   },
   dashboard: async (): Promise<DashboardStats & { stockAlerts: StockAlert[] }> => {
     return await dashboardFn();
@@ -787,6 +809,9 @@ export const accountingService = {
     crAccount?: string;
     lines?: JournalLine[];
     notes?: string;
+    refType?: "sales" | "purchase" | "expense" | "payroll";
+    refId?: string;
+    refNo?: string;
   }) => {
     if (data.type === "journal") {
       const lines = data.lines?.length
@@ -806,6 +831,9 @@ export const accountingService = {
       partyId: data.partyId,
       partyName: data.partyName,
       notes: data.notes,
+      refType: data.refType,
+      refId: data.refId,
+      refNo: data.refNo,
       createdAt: new Date().toISOString(),
     });
     await postLedger({
@@ -868,6 +896,48 @@ export const accountingService = {
   removeVoucher: async (id: string) => {
     const voucher = await call<Voucher | null>("get", "vouchers", id);
     if (!voucher) throw new Error("Voucher not found");
+
+    // Money receipts created from invoice payment: reverse sales paid + matching ledger
+    if (voucher.type === "receipt" && voucher.refType === "sales" && voucher.refId) {
+      const order = await call<SalesOrder | null>("get", "sales", voucher.refId);
+      if (order) {
+        const paid = Math.max(0, (order.paid || 0) - voucher.amount);
+        let status: SalesStatus = order.status;
+        if (order.status === "paid" && paid < order.total) {
+          status = paid > 0 ? "invoiced" : "confirmed";
+        }
+        await call("update", "sales", order.id, { paid, status });
+      }
+      const ledger = await call<LedgerEntry[]>("list", "ledger");
+      const byVoucherNo = ledger.filter(
+        (e) =>
+          e.refType === "sales"
+          && e.refId === voucher.refId
+          && e.direction === "in"
+          && e.amount === voucher.amount
+          && (e.notes || "").includes(voucher.voucherNo),
+      );
+      const byOrderNo = ledger
+        .filter(
+          (e) =>
+            e.refType === "sales"
+            && e.refId === voucher.refId
+            && e.direction === "in"
+            && e.amount === voucher.amount
+            && (e.notes || "").includes(voucher.refNo || ""),
+        )
+        .sort((a, b) => b.date.localeCompare(a.date));
+      const toRemove = byVoucherNo.length
+        ? byVoucherNo.slice(0, 1)
+        : byOrderNo.length
+          ? byOrderNo.slice(0, 1)
+          : ledger.filter((e) => e.refType === "voucher" && e.refId === id);
+      for (const entry of toRemove) {
+        await call("remove", "ledger", entry.id);
+      }
+      return call<{ ok: true }>("remove", "vouchers", id);
+    }
+
     const ledger = await call<LedgerEntry[]>("list", "ledger");
     for (const entry of ledger.filter((e) => e.refType === "voucher" && e.refId === id)) {
       await call("remove", "ledger", entry.id);

@@ -28,6 +28,12 @@ import { formatCurrency, formatDate } from "@/utils/formatters";
 import type { LedgerEntry, Voucher } from "@/types";
 import { z } from "zod";
 import { useT } from "@/i18n";
+import { Printer } from "lucide-react";
+import {
+  MoneyReceiptPrint,
+  voucherToReceipt,
+  type MoneyReceiptModel,
+} from "@/components/sales/MoneyReceiptPrint";
 
 type FormValues = z.infer<typeof voucherSchema>;
 
@@ -44,6 +50,8 @@ export function AccountingPage() {
   const [journalOpen, setJournalOpen] = useState(true);
   const [tab, setTab] = useState("journal");
   const [selectedBank, setSelectedBank] = useState<string>("all");
+  const [receipt, setReceipt] = useState<MoneyReceiptModel | null>(null);
+  const [receiptOpen, setReceiptOpen] = useState(false);
 
   const { register, handleSubmit, setValue, watch, reset, formState: { errors, isSubmitting } } = useForm<FormValues>({
     resolver: zodResolver(voucherSchema),
@@ -52,15 +60,21 @@ export function AccountingPage() {
 
   const partyType = watch("partyType");
 
+  const openReceipt = (v: Voucher) => {
+    setReceipt(voucherToReceipt(v));
+    setReceiptOpen(true);
+  };
+
   const create = useMutation({
     mutationFn: (values: FormValues) => accountingService.createVoucher(values),
-    onSuccess: () => {
+    onSuccess: (voucher) => {
       qc.invalidateQueries({ queryKey: ["vouchers"] });
       qc.invalidateQueries({ queryKey: ["ledger"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
       toast.success(t("accounting.posted"));
       reset({ type: "payment", account: "cash", amount: 0, partyType: undefined, partyId: "", partyName: "", notes: "" });
       setOpen(false);
+      if (voucher.type === "receipt") openReceipt(voucher);
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -71,6 +85,7 @@ export function AccountingPage() {
       qc.invalidateQueries({ queryKey: ["vouchers"] });
       qc.invalidateQueries({ queryKey: ["ledger"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["sales"] });
       toast.success(t("accounting.voided"));
     },
     onError: (e: Error) => toast.error(e.message),
@@ -304,6 +319,15 @@ export function AccountingPage() {
                 className: actionsColumnClass,
                 render: (r) => (
                   <RowActions
+                    extras={
+                      r.type === "receipt"
+                        ? [{
+                            label: t("doc.printReceipt"),
+                            onClick: () => openReceipt(r),
+                            icon: <Printer className="h-3.5 w-3.5" />,
+                          }]
+                        : undefined
+                    }
                     onDelete={() => {
                       if (confirm(t("accounting.voidConfirm"))) removeVoucher.mutate(r.id);
                     }}
@@ -344,6 +368,8 @@ export function AccountingPage() {
           <AssetsTab />
         </TabsContent>
       </Tabs>
+
+      <MoneyReceiptPrint receipt={receipt} open={receiptOpen} onOpenChange={setReceiptOpen} />
     </div>
   );
 }

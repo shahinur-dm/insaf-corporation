@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { purchaseService } from "@/services/purchase.service";
 import { productService } from "@/services/product.service";
@@ -24,11 +24,12 @@ import { PrintDocHeader } from "@/components/common/PrintDocHeader";
 import { PartyNameLink } from "@/components/common/PartyNameLink";
 import type { PaymentMethod } from "@/types";
 import { useT } from "@/i18n";
-import { Printer } from "lucide-react";
+import { Printer, Trash2 } from "lucide-react";
 
 export function PurchaseView({ id }: { id: string }) {
   const t = useT();
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const { data: po, isLoading, isFetched } = useQuery({
     queryKey: ["purchases", id],
     queryFn: () => purchaseService.get(id),
@@ -47,6 +48,7 @@ export function PurchaseView({ id }: { id: string }) {
     qc.invalidateQueries({ queryKey: ["dashboard"] });
     qc.invalidateQueries({ queryKey: ["cylinders"] });
     qc.invalidateQueries({ queryKey: ["cylinderMovements"] });
+    qc.invalidateQueries({ queryKey: ["ledger"] });
   };
 
   const receive = useMutation({
@@ -67,12 +69,23 @@ export function PurchaseView({ id }: { id: string }) {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const remove = useMutation({
+    mutationFn: () => purchaseService.remove(id),
+    onSuccess: () => {
+      invalidate();
+      toast.success(t("purchases.deleted"));
+      navigate({ to: "/purchases" });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   if (isLoading) return <div className="p-6 text-sm text-muted-foreground">{t("common.loading")}</div>;
   if (isFetched && !po) return <div className="p-6 text-sm text-destructive">{t("purchases.notFound")}</div>;
   if (!po) return null;
 
   const due = po.total - po.paid;
-  const busy = receive.isPending || pay.isPending || cancel.isPending;
+  const busy = receive.isPending || pay.isPending || cancel.isPending || remove.isPending;
+  const canDelete = po.status === "draft" || po.status === "cancelled";
   const needsCylinders = po.items.some((it) => isCylinderProduct(products.find((p) => p.id === it.productId)));
   const startReceive = () => {
     if (needsCylinders) setReceiveOpen(true);
@@ -102,6 +115,18 @@ export function PurchaseView({ id }: { id: string }) {
               <Printer className="mr-1 h-4 w-4" />
               {t("common.print")}
             </Button>
+            {canDelete && (
+              <Button
+                variant="destructive"
+                disabled={busy}
+                onClick={() => {
+                  if (confirm(t("purchases.deleteConfirm"))) remove.mutate();
+                }}
+              >
+                <Trash2 className="mr-1 h-4 w-4" />
+                {t("common.delete")}
+              </Button>
+            )}
             <Badge>{t(`status.${po.status}` as any)}</Badge>
           </div>
         }

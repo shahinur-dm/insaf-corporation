@@ -266,6 +266,10 @@ export interface Voucher {
   crAccount?: string;
   lines?: JournalLine[];
   notes?: string;
+  /** Link to sales/purchase when receipt was created from a document payment */
+  refType?: "sales" | "purchase" | "expense" | "payroll";
+  refId?: string;
+  refNo?: string;
   createdAt: string;
 }
 
