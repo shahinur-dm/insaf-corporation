@@ -1,5 +1,5 @@
 import type {
-  Customer, Supplier, Product, Cylinder, CylinderMovement, CylinderStatus,
+  Customer, Supplier, Product, Cylinder, CylinderMovement, CylinderStatus, CylinderFillLevel,
   SalesOrder, SalesStatus, Delivery, StockAlert, DashboardStats, LineItem,
   Expense, LedgerEntry, PaymentMethod, PurchaseOrder, PurchaseStatus,
   StockMovement, Voucher, VoucherType, Employee, PayrollRun, Account,
@@ -8,6 +8,7 @@ import type {
 } from "@/types";
 import { crudFn, dashboardFn, notificationsFn } from "@/lib/data.functions";
 import { genOrderNo } from "@/utils/helpers";
+import { cylinderIsEmpty } from "@/lib/cylinder-product";
 
 const call = async <T,>(op: any, coll: any, id?: string, payload?: any): Promise<T> => {
   return (await crudFn({ data: { op, coll, id, payload } })) as T;
@@ -228,14 +229,20 @@ async function adjustStock(
 function statusFromMovement(type: CylinderMovement["type"]): CylinderStatus {
   switch (type) {
     case "issued": return "at_customer";
-    case "returned":
-    case "received": return "in_stock";
-    case "refilled": return "refilling";
+    case "returned": return "refilling";
+    case "received":
+    case "refilled": return "in_stock";
     case "transferred": return "in_transit";
     case "damaged": return "damaged";
     case "lost": return "lost";
     default: return "in_stock";
   }
+}
+
+function fillLevelFromMovement(type: CylinderMovement["type"]): CylinderFillLevel | undefined {
+  if (type === "returned") return "empty";
+  if (type === "issued" || type === "received" || type === "refilled") return "full";
+  return undefined;
 }
 
 async function postLedger(entry: Omit<LedgerEntry, "id">) {
@@ -337,7 +344,9 @@ export const cylinderService = {
   get: (id: string) => call<Cylinder | null>("get", "cylinders", id),
   create: (data: Omit<Cylinder, "id" | "createdAt" | "lastMovementAt">) => {
     const now = new Date().toISOString();
-    return call<Cylinder>("create", "cylinders", undefined, { ...data, createdAt: now, lastMovementAt: now });
+    const fillLevel = data.fillLevel
+      ?? (data.status === "refilling" ? "empty" : data.status === "in_stock" ? "full" : "full");
+    return call<Cylinder>("create", "cylinders", undefined, { ...data, fillLevel, createdAt: now, lastMovementAt: now });
   },
   update: async (id: string, data: Partial<Cylinder>) => {
     const { createdAt: _createdAt, ...rest } = data;
@@ -353,7 +362,9 @@ export const cylinderService = {
     const now = new Date().toISOString();
     const mv = await call<CylinderMovement>("create", "movements", undefined, { ...data, timestamp: now });
     const status = statusFromMovement(data.type);
+    const fillLevel = fillLevelFromMovement(data.type);
     const patch: Record<string, unknown> = { lastMovementAt: mv.timestamp, status };
+    if (fillLevel) patch.fillLevel = fillLevel;
     if (data.toLocation) patch.location = data.toLocation;
     if (data.type === "issued") patch.customerId = data.customerId;
     else if (data.type === "returned" || data.type === "received") patch.customerId = null;
@@ -547,6 +558,9 @@ export const deliveryService = {
         }
         if (cyl.status !== "in_stock" && cyl.status !== "in_transit") {
           throw new Error(`${cyl.serialNumber} is ${cyl.status}, not available to issue`);
+        }
+        if (cylinderIsEmpty(cyl)) {
+          throw new Error(`${cyl.serialNumber} is empty and must be refilled before issue`);
         }
       }
     }

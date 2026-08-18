@@ -22,6 +22,8 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { useT } from "@/i18n";
+import { hrService } from "@/services/hr.service";
+import { isDeliveryStaff } from "@/lib/hr-staff";
 
 export function SalesOrderForm({
   mode = "order",
@@ -36,6 +38,8 @@ export function SalesOrderForm({
   const editing = Boolean(id);
   const { data: customers = [] } = useQuery({ queryKey: ["customers"], queryFn: customerService.list });
   const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: productService.list });
+  const { data: employees = [] } = useQuery({ queryKey: ["employees"], queryFn: hrService.listEmployees });
+  const deliveryStaff = employees.filter(isDeliveryStaff);
   const { data: existing, isLoading } = useQuery({
     queryKey: ["sales", id],
     queryFn: () => salesService.get(id!),
@@ -43,6 +47,7 @@ export function SalesOrderForm({
   });
 
   const [customerId, setCustomerId] = useState<string>("");
+  const [driverName, setDriverName] = useState("");
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState<LineItem[]>([]);
   const [hydrated, setHydrated] = useState(!editing);
@@ -50,6 +55,7 @@ export function SalesOrderForm({
   useEffect(() => {
     if (!existing) return;
     setCustomerId(existing.customerId);
+    setDriverName(existing.driverName ?? "");
     setNotes(existing.notes ?? "");
     setItems(existing.items);
     setHydrated(true);
@@ -69,7 +75,7 @@ export function SalesOrderForm({
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const parsed = salesOrderSchema.safeParse({ customerId, notes, items });
+      const parsed = salesOrderSchema.safeParse({ customerId, notes, items, driverName: driverName || undefined });
       if (!parsed.success) throw new Error(parsed.error.errors[0]?.message || "Invalid form");
       const customer = customers.find((c) => c.id === customerId);
       if (!customer) throw new Error(t("common.select"));
@@ -87,6 +93,7 @@ export function SalesOrderForm({
           tax: 0,
           total: totals.total,
           notes,
+          driverName: driverName || undefined,
         });
       }
 
@@ -97,6 +104,7 @@ export function SalesOrderForm({
         items: items.map((it) => ({ ...it, taxRate: 0 })),
         subtotal: totals.subtotal, tax: 0, total: totals.total,
         paid: 0, status: mode === "quotation" ? "draft" : "confirmed", notes,
+        driverName: driverName || undefined,
       });
     },
     onSuccess: (order) => {
@@ -133,6 +141,25 @@ export function SalesOrderForm({
             </Select>
           </div>
           <div className="space-y-1.5">
+            <Label>{t("deliveries.deliveryman")}</Label>
+            {deliveryStaff.length > 0 ? (
+              <Select value={driverName || "__none"} onValueChange={(v) => setDriverName(v === "__none" ? "" : v)}>
+                <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none">—</SelectItem>
+                  {deliveryStaff.map((e) => (
+                    <SelectItem key={e.id} value={e.name}>{e.name} · {e.designation}</SelectItem>
+                  ))}
+                  {driverName && !deliveryStaff.some((e) => e.name === driverName) && (
+                    <SelectItem value={driverName}>{driverName}</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder={t("common.select")} />
+            )}
+          </div>
+          <div className="space-y-1.5 md:col-span-2">
             <Label>{t("common.notes")}</Label>
             <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t("common.optionalNotes")} />
           </div>

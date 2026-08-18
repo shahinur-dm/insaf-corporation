@@ -71,6 +71,7 @@ export interface LayerConsumption {
 }
 
 export type CylinderStatus = "in_stock" | "at_customer" | "in_transit" | "refilling" | "damaged" | "lost";
+export type CylinderFillLevel = "full" | "empty";
 
 export interface Cylinder {
   id: ID;
@@ -80,8 +81,9 @@ export interface Cylinder {
   status: CylinderStatus;
   location: string;
   customerId?: ID;
-  /** Copied from the linked product category (LPG, Industrial, Medical, Other). */
   gasCategory?: ProductCategory;
+  /** Full vs empty gas contents. Returned empties are empty until refilled. */
+  fillLevel?: CylinderFillLevel;
   lastMovementAt: string;
   createdAt: string;
 }
@@ -133,6 +135,8 @@ export interface SalesOrder {
   status: SalesStatus;
   notes?: string;
   createdAt?: string;
+  /** Assigned deliveryman name when set on the sales order */
+  driverName?: string;
 }
 
 export interface Delivery {
@@ -292,6 +296,8 @@ export interface Employee {
   department: string;
   joiningDate: string;
   salary: number;
+  /** Commission earned per delivery, if applicable */
+  perDeliveryCommission?: number;
   status: "active" | "inactive";
   createdAt: string;
 }

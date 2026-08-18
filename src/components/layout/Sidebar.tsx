@@ -15,7 +15,12 @@ export function AppSidebar() {
   const t = useT();
   const pathname = useRouterState({ select: (r) => r.location.pathname });
   const { canAccessUrl, isLoading } = useModuleAccess();
-  const isActive = (url: string) => (url === "/" ? pathname === "/" : pathname.startsWith(url));
+  const isActive = (url: string) => {
+    if (url === "/") return pathname === "/";
+    if (url === "/hr") return pathname === "/hr" || pathname === "/hr/";
+    if (url === "/hr/employees") return pathname.startsWith("/hr/employees") || /^\/hr\/[^/]+/.test(pathname);
+    return pathname.startsWith(url);
+  };
 
   const groups: { labelKey: MessageKey; items: { titleKey: MessageKey; url: string; icon: typeof LayoutDashboard }[] }[] = [
     {
@@ -49,6 +54,7 @@ export function AppSidebar() {
         { titleKey: "nav.accounting", url: "/accounting", icon: BookOpen },
         { titleKey: "nav.expenses", url: "/expenses", icon: Receipt },
         { titleKey: "nav.hr", url: "/hr", icon: UserCog },
+        { titleKey: "nav.employees", url: "/hr/employees", icon: Users },
       ],
     },
     {

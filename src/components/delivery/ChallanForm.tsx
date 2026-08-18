@@ -8,6 +8,7 @@ import { productService } from "@/services/product.service";
 import { salesService } from "@/services/sales.service";
 import { deliveryService } from "@/services/delivery.service";
 import { hrService } from "@/services/hr.service";
+import { isDeliveryStaff } from "@/lib/hr-staff";
 import { deliverySchema } from "@/utils/validators";
 import { genOrderNo } from "@/utils/helpers";
 import type { LineItem } from "@/types";
@@ -46,12 +47,7 @@ export function ChallanForm({
   });
 
   const openOrders = sales.filter((s) => s.status === "confirmed" || s.status === "invoiced");
-  const deliveryStaff = employees.filter((e) => {
-    if (e.status !== "active") return false;
-    const des = (e.designation || "").toLowerCase();
-    const dept = (e.department || "").toLowerCase();
-    return des === "delivery man" || des === "driver" || dept === "delivery";
-  });
+  const deliveryStaff = employees.filter(isDeliveryStaff);
 
   const [salesOrderId, setSalesOrderId] = useState(initialSoId || "");
   const [customerId, setCustomerId] = useState("");
@@ -76,6 +72,7 @@ export function ChallanForm({
     if (!so) return;
     setCustomerId(so.customerId);
     setItems(so.items.map((it) => ({ ...it })));
+    if (so.driverName) setDriverName(so.driverName);
   }, [salesOrderId, sales, editing]);
 
   const addItem = () => {
@@ -175,7 +172,7 @@ export function ChallanForm({
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label>{t("deliveries.driver")}</Label>
+            <Label>{t("deliveries.deliveryman")}</Label>
             {deliveryStaff.length > 0 ? (
               <Select value={driverName} onValueChange={setDriverName}>
                 <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>

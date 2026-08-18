@@ -34,6 +34,7 @@ import { Route as PurchasesNewRouteImport } from './routes/purchases.new'
 import { Route as PurchasesIdRouteImport } from './routes/purchases.$id'
 import { Route as ProductsNewRouteImport } from './routes/products.new'
 import { Route as ProductsIdRouteImport } from './routes/products.$id'
+import { Route as HrEmployeesRouteImport } from './routes/hr.employees'
 import { Route as HrIdRouteImport } from './routes/hr.$id'
 import { Route as DeliveriesNewRouteImport } from './routes/deliveries.new'
 import { Route as DeliveriesIdRouteImport } from './routes/deliveries.$id'
@@ -177,6 +178,11 @@ const ProductsIdRoute = ProductsIdRouteImport.update({
   path: '/products/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HrEmployeesRoute = HrEmployeesRouteImport.update({
+  id: '/employees',
+  path: '/employees',
+  getParentRoute: () => HrRoute,
+} as any)
 const HrIdRoute = HrIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -279,6 +285,7 @@ export interface FileRoutesByFullPath {
   '/deliveries/$id': typeof DeliveriesIdRouteWithChildren
   '/deliveries/new': typeof DeliveriesNewRoute
   '/hr/$id': typeof HrIdRouteWithChildren
+  '/hr/employees': typeof HrEmployeesRoute
   '/products/$id': typeof ProductsIdRouteWithChildren
   '/products/new': typeof ProductsNewRoute
   '/purchases/$id': typeof PurchasesIdRouteWithChildren
@@ -322,6 +329,7 @@ export interface FileRoutesByTo {
   '/deliveries/$id': typeof DeliveriesIdRouteWithChildren
   '/deliveries/new': typeof DeliveriesNewRoute
   '/hr/$id': typeof HrIdRouteWithChildren
+  '/hr/employees': typeof HrEmployeesRoute
   '/products/$id': typeof ProductsIdRouteWithChildren
   '/products/new': typeof ProductsNewRoute
   '/purchases/$id': typeof PurchasesIdRouteWithChildren
@@ -367,6 +375,7 @@ export interface FileRoutesById {
   '/deliveries/$id': typeof DeliveriesIdRouteWithChildren
   '/deliveries/new': typeof DeliveriesNewRoute
   '/hr/$id': typeof HrIdRouteWithChildren
+  '/hr/employees': typeof HrEmployeesRoute
   '/products/$id': typeof ProductsIdRouteWithChildren
   '/products/new': typeof ProductsNewRoute
   '/purchases/$id': typeof PurchasesIdRouteWithChildren
@@ -413,6 +422,7 @@ export interface FileRouteTypes {
     | '/deliveries/$id'
     | '/deliveries/new'
     | '/hr/$id'
+    | '/hr/employees'
     | '/products/$id'
     | '/products/new'
     | '/purchases/$id'
@@ -456,6 +466,7 @@ export interface FileRouteTypes {
     | '/deliveries/$id'
     | '/deliveries/new'
     | '/hr/$id'
+    | '/hr/employees'
     | '/products/$id'
     | '/products/new'
     | '/purchases/$id'
@@ -500,6 +511,7 @@ export interface FileRouteTypes {
     | '/deliveries/$id'
     | '/deliveries/new'
     | '/hr/$id'
+    | '/hr/employees'
     | '/products/$id'
     | '/products/new'
     | '/purchases/$id'
@@ -739,6 +751,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProductsIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/hr/employees': {
+      id: '/hr/employees'
+      path: '/employees'
+      fullPath: '/hr/employees'
+      preLoaderRoute: typeof HrEmployeesRouteImport
+      parentRoute: typeof HrRoute
+    }
     '/hr/$id': {
       id: '/hr/$id'
       path: '/$id'
@@ -873,11 +892,13 @@ const HrIdRouteWithChildren = HrIdRoute._addFileChildren(HrIdRouteChildren)
 
 interface HrRouteChildren {
   HrIdRoute: typeof HrIdRouteWithChildren
+  HrEmployeesRoute: typeof HrEmployeesRoute
   HrIndexRoute: typeof HrIndexRoute
 }
 
 const HrRouteChildren: HrRouteChildren = {
   HrIdRoute: HrIdRouteWithChildren,
+  HrEmployeesRoute: HrEmployeesRoute,
   HrIndexRoute: HrIndexRoute,
 }
 

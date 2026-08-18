@@ -55,9 +55,13 @@ export function CylinderForm({ id }: { id?: string }) {
       editing
         ? cylinderService.update(id!, {
             ...v,
+            fillLevel: v.status === "refilling" ? "empty" : v.status === "in_stock" ? "full" : existing?.fillLevel,
             lastMovementAt: existing?.lastMovementAt ?? new Date().toISOString(),
           } as never)
-        : cylinderService.create(v as never),
+        : cylinderService.create({
+            ...v,
+            fillLevel: v.status === "refilling" ? "empty" : "full",
+          } as never),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["cylinders"] });
       toast.success(editing ? t("cylinders.updated") : t("cylinders.new"));

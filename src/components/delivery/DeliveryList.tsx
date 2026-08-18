@@ -43,7 +43,7 @@ export function DeliveryList() {
           { key: "no", header: t("deliveries.challanNo"), sortable: true, sortValue: (r) => r.challanNo, render: (r) => <span className="font-mono text-xs">{r.challanNo}</span> },
           { key: "date", header: t("common.date"), sortable: true, sortValue: (r) => r.date, render: (r) => formatDate(r.date) },
           { key: "cust", header: t("common.customer"), sortable: true, sortValue: (r) => r.customerName, render: (r) => <span className="font-medium">{r.customerName}</span> },
-          { key: "drv", header: t("deliveries.driver"), sortable: true, sortValue: (r) => r.driverName, render: (r) => r.driverName },
+          { key: "drv", header: t("deliveries.deliveryman"), sortable: true, sortValue: (r) => r.driverName, render: (r) => r.driverName },
           { key: "veh", header: t("deliveries.vehicle"), sortable: true, sortValue: (r) => r.vehicleNo, render: (r) => <span className="font-mono text-xs">{r.vehicleNo}</span> },
           { key: "st", header: t("common.status"), sortable: true, sortValue: (r) => r.status, render: (r) => (
             <Badge variant={r.status === "pending" ? "secondary" : r.status === "confirmed" ? "outline" : "default"}>

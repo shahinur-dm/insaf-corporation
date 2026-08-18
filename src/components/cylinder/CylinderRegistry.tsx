@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Plus, Printer } from "lucide-react";
@@ -14,7 +14,11 @@ import { RowActions, actionsColumnClass } from "@/components/common/RowActions";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { CylinderLedger } from "@/components/cylinder/CylinderLedger";
 import { Card, CardContent } from "@/components/ui/card";
-import { cylinderStatusCounts } from "@/lib/cylinder-product";
+import { Label } from "@/components/ui/label";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { CYLINDER_SIZE_OPTIONS, cylinderOverviewCounts, matchesCylinderSize } from "@/lib/cylinder-product";
 import { formatDateTime } from "@/utils/formatters";
 import type { Cylinder, CylinderStatus } from "@/types";
 import { EMPTY_DATE_RANGE, type DateRange } from "@/lib/date-range";
@@ -31,9 +35,22 @@ export function CylinderRegistry() {
   const qc = useQueryClient();
   const [tab, setTab] = useState<"registry" | "tracking">("tracking");
   const [range, setRange] = useState<DateRange>(EMPTY_DATE_RANGE);
+  const [sizeFilter, setSizeFilter] = useState<string>("all");
+  const [warehouseFilter, setWarehouseFilter] = useState<string>("all");
   const { data = [] } = useQuery({ queryKey: ["cylinders"], queryFn: cylinderService.list });
   const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: productService.list });
-  const counts = cylinderStatusCounts(data);
+  const warehouses = useMemo(
+    () => Array.from(new Set(data.map((c) => c.location).filter(Boolean))).sort(),
+    [data],
+  );
+  const filtered = useMemo(() => {
+    return data.filter((c) => {
+      if (sizeFilter !== "all" && !matchesCylinderSize(c.capacity, Number(sizeFilter))) return false;
+      if (warehouseFilter !== "all" && c.location !== warehouseFilter) return false;
+      return true;
+    });
+  }, [data, sizeFilter, warehouseFilter]);
+  const counts = cylinderOverviewCounts(filtered);
   const gasCategoryOf = (c: Cylinder) =>
     c.gasCategory || products.find((p) => p.id === c.productId)?.category || "—";
 
@@ -73,12 +90,38 @@ export function CylinderRegistry() {
             {t("cylinders.registryTab")}
           </Button>
         </div>
+      <div className="no-print mb-4 grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label>{t("cylinders.filterSize")}</Label>
+          <Select value={sizeFilter} onValueChange={setSizeFilter}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t("filter.all")}</SelectItem>
+              {CYLINDER_SIZE_OPTIONS.map((sz) => (
+                <SelectItem key={sz} value={String(sz)}>{sz}kg</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label>{t("cylinders.filterWarehouse")}</Label>
+          <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t("filter.all")}</SelectItem>
+              {warehouses.map((w) => (
+                <SelectItem key={w} value={w}>{w}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {([
-          ["cylinders.total", counts.total],
-          ["cylinders.filled", counts.filled],
+          ["cylinders.full", counts.full],
           ["cylinders.empty", counts.empty],
           ["cylinders.refillPending", counts.refillPending],
+          ["cylinders.inTransit", counts.inTransit],
         ] as const).map(([key, value]) => (
           <Card key={key}>
             <CardContent className="pt-4 pb-3">
@@ -101,7 +144,7 @@ export function CylinderRegistry() {
       )}
       {tab === "registry" && (
       <DataTable<Cylinder>
-        rows={data}
+        rows={filtered}
         searchKeys={["serialNumber", "location"]}
         dateKey="lastMovementAt"
         onRowClick={(r) => navigate({ to: "/cylinders/$id", params: { id: r.id } })}

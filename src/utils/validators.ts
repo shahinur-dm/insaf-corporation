@@ -85,6 +85,7 @@ export const lineItemSchema = z.object({
 export const salesOrderSchema = z.object({
   customerId: z.string().min(1, "Select a customer"),
   notes: z.string().optional(),
+  driverName: z.string().optional(),
   items: z.array(lineItemSchema).min(1, "Add at least one item"),
 });
 
@@ -109,6 +110,7 @@ export const employeeSchema = z.object({
   department: z.string().min(2, "Department required"),
   joiningDate: z.string().min(1, "Joining date required"),
   salary: z.coerce.number().min(0),
+  perDeliveryCommission: z.coerce.number().min(0).optional(),
 });
 
 export const voucherSchema = z.object({

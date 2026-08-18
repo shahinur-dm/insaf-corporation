@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useRouteContext } from "@tanstack/react-router";
 import { salesService } from "@/services/sales.service";
 import { expenseService } from "@/services/expense.service";
+import { cylinderService } from "@/services/cylinder.service";
 import { StatCard } from "./widgets/StatCard";
 import { StockAlerts } from "./widgets/StockAlert";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
@@ -14,6 +15,7 @@ import {
 } from "lucide-react";
 import { useT } from "@/i18n";
 import { EMPTY_DATE_RANGE, filterByDateRange, type DateRange } from "@/lib/date-range";
+import { cylinderOverviewCounts } from "@/lib/cylinder-product";
 
 export function Dashboard() {
   const t = useT();
@@ -43,6 +45,12 @@ export function Dashboard() {
     refetchOnMount: "always",
     staleTime: 0,
   });
+  const { data: cylinders = [] } = useQuery({
+    queryKey: ["cylinders"],
+    queryFn: cylinderService.list,
+    refetchOnMount: "always",
+    staleTime: 0,
+  });
 
   const s = data ?? {
     todaySales: 0, todayCollection: 0, todayExpense: 0,
@@ -64,6 +72,8 @@ export function Dashboard() {
   const periodSales = filteredSales.reduce((a, o) => a + o.total, 0);
   const periodCollection = filteredSales.reduce((a, o) => a + o.paid, 0);
   const periodExpense = filteredExpenses.reduce((a, o) => a + o.amount, 0);
+
+  const cylCounts = useMemo(() => cylinderOverviewCounts(cylinders), [cylinders]);
 
   const greetingName = user?.displayName || "Operator";
 
@@ -140,14 +150,20 @@ export function Dashboard() {
         <div data-reveal>
         <StatCard title={t("dash.availableStock")} value={String(s.availableStock)} icon={Package} hint={t("dash.hintUnits")} to="/inventory" />
         </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <div data-reveal>
-        <StatCard title={t("dash.cylWarehouse")} value={String(s.cylindersInWarehouse)} icon={CylinderIcon} tone="info" to="/cylinders" />
+        <StatCard title={t("cylinders.full")} value={String(cylCounts.full)} icon={CylinderIcon} tone="positive" to="/cylinders" />
         </div>
         <div data-reveal>
-        <StatCard title={t("dash.cylCustomers")} value={String(s.cylindersWithCustomers)} icon={Users} to="/cylinders" />
+        <StatCard title={t("cylinders.empty")} value={String(cylCounts.empty)} icon={Package} tone="info" to="/cylinders" />
         </div>
         <div data-reveal>
-        <StatCard title={t("dash.cylRefillDamage")} value={`${s.cylindersUnderRefill} / ${s.damagedCylinders + s.lostCylinders}`} icon={AlertTriangle} tone="warning" to="/cylinders" />
+        <StatCard title={t("cylinders.refillPending")} value={String(cylCounts.refillPending)} icon={AlertTriangle} tone="warning" to="/cylinders" />
+        </div>
+        <div data-reveal>
+        <StatCard title={t("cylinders.inTransit")} value={String(cylCounts.inTransit)} icon={Truck} to="/cylinders" />
         </div>
       </div>
 

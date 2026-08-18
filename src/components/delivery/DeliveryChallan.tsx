@@ -8,11 +8,17 @@ import { salesService } from "@/services/sales.service";
 import { productService } from "@/services/product.service";
 import { cylinderService } from "@/services/cylinder.service";
 import { customerService } from "@/services/customer.service";
+import { hrService } from "@/services/hr.service";
 import { isCylinderProduct } from "@/lib/cylinder-product";
+import { isDeliveryStaff } from "@/lib/hr-staff";
 import { DeliveryCylinderDialog } from "@/components/delivery/DeliveryCylinderDialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { PageHeader } from "@/components/common/PageHeader";
 import { PrintDocHeader } from "@/components/common/PrintDocHeader";
 import { PrintMeta, PrintSignatures } from "@/components/common/PrintParts";
@@ -44,6 +50,7 @@ export function DeliveryChallan({ id }: { id: string }) {
     queryFn: () => salesService.get(d!.salesOrderId!),
     enabled: !!d?.salesOrderId,
   });
+  const { data: employees = [] } = useQuery({ queryKey: ["employees"], queryFn: hrService.listEmployees });
 
   const confirm = useMutation({
     mutationFn: (payload?: { issuedIdsByItem?: string[][]; returnedIds?: string[] }) =>
@@ -58,6 +65,16 @@ export function DeliveryChallan({ id }: { id: string }) {
       qc.invalidateQueries({ queryKey: ["cylinderMovements"] });
       setAssignOpen(false);
       toast.success(t("deliveries.confirm"));
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const assignDriver = useMutation({
+    mutationFn: (name: string) => deliveryService.update(id, { driverName: name }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["deliveries"] });
+      qc.invalidateQueries({ queryKey: ["deliveries", id] });
+      toast.success(t("deliveries.assigned"));
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -90,7 +107,8 @@ export function DeliveryChallan({ id }: { id: string }) {
 
   const soNo = salesOrder?.orderNo || "—";
   const dispatchDate = d.confirmedAt ? formatDateTime(d.confirmedAt) : formatDate(d.date);
-  const busy = confirm.isPending || remove.isPending;
+  const busy = confirm.isPending || remove.isPending || assignDriver.isPending;
+  const deliveryStaff = employees.filter(isDeliveryStaff);
 
   return (
     <div>
@@ -169,12 +187,32 @@ export function DeliveryChallan({ id }: { id: string }) {
                     </Link>
                   ) : "—",
                 },
-                { label: t("deliveries.driver"), value: d.driverName },
+                { label: t("deliveries.deliveryman"), value: d.driverName },
                 { label: t("deliveries.vehicle"), value: d.vehicleNo },
                 { label: t("doc.dispatchDate"), value: dispatchDate },
               ]}
             />
           </div>
+          {d.status === "pending" && deliveryStaff.length > 0 && (
+            <div className="no-print max-w-sm space-y-1.5">
+              <Label>{t("deliveries.deliveryman")}</Label>
+              <Select
+                value={d.driverName}
+                onValueChange={(v) => assignDriver.mutate(v)}
+                disabled={assignDriver.isPending}
+              >
+                <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
+                <SelectContent>
+                  {deliveryStaff.map((e) => (
+                    <SelectItem key={e.id} value={e.name}>{e.name} · {e.designation}</SelectItem>
+                  ))}
+                  {d.driverName && !deliveryStaff.some((e) => e.name === d.driverName) && (
+                    <SelectItem value={d.driverName}>{d.driverName}</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="overflow-x-auto">
             <Table>

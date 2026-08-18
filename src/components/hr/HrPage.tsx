@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { hrService } from "@/services/hr.service";
 import { employeeSchema } from "@/utils/validators";
@@ -23,16 +22,15 @@ import { formatCurrency, formatDate } from "@/utils/formatters";
 import type { Employee, PayrollRun } from "@/types";
 import { z } from "zod";
 import { useT } from "@/i18n";
-import { FileText, Printer } from "lucide-react";
+import { Printer } from "lucide-react";
 import { PayslipPrint } from "./PayslipPrint";
+import { EmployeeRoster } from "@/components/hr/EmployeeRoster";
+import { DELIVERY_MAN, DESIGNATION_PRESETS } from "@/lib/hr-staff";
 
 type EmpForm = z.infer<typeof employeeSchema>;
-const DELIVERY_MAN = "Delivery Man";
-const DESIGNATION_PRESETS = ["Delivery Man", "Driver", "Accounts Officer", "Warehouse Supervisor"];
 
 export function HrPage() {
   const t = useT();
-  const navigate = useNavigate();
   const qc = useQueryClient();
   const { data: employees = [] } = useQuery({ queryKey: ["employees"], queryFn: hrService.listEmployees });
   const { data: payroll = [] } = useQuery({ queryKey: ["payroll"], queryFn: hrService.listPayroll });
@@ -71,6 +69,7 @@ export function HrPage() {
     defaultValues: {
       joiningDate: new Date().toISOString().slice(0, 10),
       salary: 20000,
+      perDeliveryCommission: 0,
     },
   });
 
@@ -85,6 +84,7 @@ export function HrPage() {
       department: "",
       joiningDate: new Date().toISOString().slice(0, 10),
       salary: 20000,
+      perDeliveryCommission: 0,
     });
   };
 
@@ -99,6 +99,7 @@ export function HrPage() {
       department: emp.department,
       joiningDate: emp.joiningDate.slice(0, 10),
       salary: emp.salary,
+      perDeliveryCommission: emp.perDeliveryCommission || 0,
     });
   };
 
@@ -214,7 +215,7 @@ export function HrPage() {
                       ...employees.map((e) => e.designation).filter(Boolean),
                       watch("designation") || "",
                     ].filter(Boolean))).map((d) => (
-                      <SelectItem key={d} value={d}>{d === DELIVERY_MAN ? t("hr.deliveryMan") : d}</SelectItem>
+                      <SelectItem key={d} value={d}>{d === DELIVERY_MAN || d === "Deliveryman" ? t("hr.deliveryMan") : d}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -223,6 +224,7 @@ export function HrPage() {
               <div className="space-y-1.5"><Label>{t("hr.department")}</Label><Input {...register("department")} /></div>
               <div className="space-y-1.5"><Label>{t("hr.joiningDate")}</Label><Input type="date" {...register("joiningDate")} /></div>
               <div className="space-y-1.5"><Label>{t("hr.basicSalary")}</Label><Input type="number" {...register("salary")} /></div>
+              <div className="space-y-1.5"><Label>{t("hr.perDelivery")}</Label><Input type="number" {...register("perDeliveryCommission")} /></div>
               {editingId && (
                 <div className="space-y-1.5">
                   <Label>{t("common.status")}</Label>
@@ -246,51 +248,13 @@ export function HrPage() {
         </Card>
       )}
 
-      <Tabs defaultValue="employees">
+      <Tabs defaultValue="payroll">
         <TabsList>
-          <TabsTrigger value="employees">{t("hr.employees")}</TabsTrigger>
           <TabsTrigger value="payroll">{t("hr.payroll")}</TabsTrigger>
+          <TabsTrigger value="employees">{t("hr.employees")}</TabsTrigger>
         </TabsList>
         <TabsContent value="employees">
-          <DataTable<Employee>
-            rows={employees}
-            searchKeys={["name", "employeeNo", "department"]}
-            dateKey="joiningDate"
-            onRowClick={(r) => navigate({ to: "/hr/$id", params: { id: r.id } })}
-            columns={[
-              { key: "no", header: t("hr.employeeId"), sortable: true, sortValue: (r) => r.employeeNo, render: (r) => <span className="font-mono text-xs">{r.employeeNo}</span> },
-              { key: "name", header: t("common.name"), sortable: true, sortValue: (r) => r.name, render: (r) => <PartyNameLink kind="employee" id={r.id} name={r.name} /> },
-              { key: "des", header: t("hr.designation"), sortable: true, sortValue: (r) => r.designation, render: (r) => r.designation },
-              { key: "dept", header: t("hr.department"), sortable: true, sortValue: (r) => r.department, render: (r) => r.department },
-              { key: "join", header: t("hr.joined"), sortable: true, sortValue: (r) => r.joiningDate, render: (r) => formatDate(r.joiningDate) },
-              { key: "sal", header: t("hr.salary"), sortable: true, sortValue: (r) => r.salary, render: (r) => formatCurrency(r.salary), className: "text-right" },
-              { key: "st", header: t("common.status"), render: (r) => (
-                <Badge variant={r.status === "active" ? "default" : "secondary"}>
-                  {r.status === "active" ? t("common.active") : t("common.inactive")}
-                </Badge>
-              ) },
-              {
-                key: "actions",
-                header: t("common.actions"),
-                className: actionsColumnClass,
-                render: (r) => (
-                  <RowActions
-                    onView={() => navigate({ to: "/hr/$id", params: { id: r.id } })}
-                    onEdit={() => startEdit(r)}
-                    extras={[{
-                      label: t("hr.statement"),
-                      icon: <FileText className="h-3.5 w-3.5" />,
-                      onClick: () => navigate({ to: "/hr/$id/statement", params: { id: r.id } }),
-                    }]}
-                    onDelete={() => {
-                      if (confirm(t("hr.deleteConfirm"))) removeEmp.mutate(r.id);
-                    }}
-                    deleteDisabled={removeEmp.isPending}
-                  />
-                ),
-              },
-            ]}
-          />
+          <EmployeeRoster />
         </TabsContent>
         <TabsContent value="payroll" className="space-y-4">
           <Card>

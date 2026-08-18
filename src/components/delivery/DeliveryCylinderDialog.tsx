@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { cylinderService } from "@/services/cylinder.service";
 import { productService } from "@/services/product.service";
-import { isCylinderProduct, pickFifo } from "@/lib/cylinder-product";
+import { isCylinderProduct, pickFifo, cylinderIsEmpty } from "@/lib/cylinder-product";
 import type { Delivery } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -65,7 +65,10 @@ export function DeliveryCylinderDialog({
         <div className="space-y-5">
           {cylLines.map(({ it, index, product }) => {
             const stock = cylinders.filter(
-              (c) => c.productId === it.productId && (c.status === "in_stock" || c.status === "in_transit") && (!selectedAll.has(c.id) || issued[index]?.includes(c.id)),
+              (c) => c.productId === it.productId
+                && (c.status === "in_stock" || c.status === "in_transit")
+                && !cylinderIsEmpty(c)
+                && (!selectedAll.has(c.id) || issued[index]?.includes(c.id)),
             );
             const count = issued[index]?.length || 0;
             return (

@@ -43,12 +43,12 @@ export const seedCostLayers: CostLayer[] = seedProducts.map((p) => ({
 }));
 
 export const seedCylinders: Cylinder[] = [
-  { id: "cy1", serialNumber: "INS-BD-00001", productId: "p1", capacity: 12, status: "in_stock", location: "Warehouse Dhaka-A", lastMovementAt: daysAgo(2), createdAt: daysAgo(200) },
-  { id: "cy2", serialNumber: "INS-BD-00002", productId: "p2", capacity: 35, status: "at_customer", location: "Padma Steel Mills", customerId: "c1", lastMovementAt: daysAgo(4), createdAt: daysAgo(200) },
-  { id: "cy3", serialNumber: "INS-BD-00003", productId: "p4", capacity: 7, status: "in_transit", location: "Van DHK-METRO-GA-1122", lastMovementAt: daysAgo(1), createdAt: daysAgo(200) },
-  { id: "cy4", serialNumber: "INS-BD-00004", productId: "p1", capacity: 12, status: "refilling", location: "Bashundhara Plant", lastMovementAt: daysAgo(3), createdAt: daysAgo(200) },
-  { id: "cy5", serialNumber: "INS-BD-00005", productId: "p5", capacity: 10, status: "in_stock", location: "Warehouse Dhaka-B", lastMovementAt: daysAgo(6), createdAt: daysAgo(200) },
-  { id: "cy6", serialNumber: "INS-BD-00006", productId: "p4", capacity: 7, status: "at_customer", location: "Square Hospital", customerId: "c2", lastMovementAt: daysAgo(5), createdAt: daysAgo(200) },
+  { id: "cy1", serialNumber: "INS-BD-00001", productId: "p1", capacity: 12, status: "in_stock", fillLevel: "full", location: "Warehouse Dhaka-A", lastMovementAt: daysAgo(2), createdAt: daysAgo(200) },
+  { id: "cy2", serialNumber: "INS-BD-00002", productId: "p2", capacity: 35, status: "at_customer", fillLevel: "full", location: "Padma Steel Mills", customerId: "c1", lastMovementAt: daysAgo(4), createdAt: daysAgo(200) },
+  { id: "cy3", serialNumber: "INS-BD-00003", productId: "p4", capacity: 7, status: "in_transit", fillLevel: "full", location: "Van DHK-METRO-GA-1122", lastMovementAt: daysAgo(1), createdAt: daysAgo(200) },
+  { id: "cy4", serialNumber: "INS-BD-00004", productId: "p1", capacity: 12, status: "refilling", fillLevel: "empty", location: "Bashundhara Plant", lastMovementAt: daysAgo(3), createdAt: daysAgo(200) },
+  { id: "cy5", serialNumber: "INS-BD-00005", productId: "p5", capacity: 10, status: "in_stock", fillLevel: "full", location: "Warehouse Dhaka-B", lastMovementAt: daysAgo(6), createdAt: daysAgo(200) },
+  { id: "cy6", serialNumber: "INS-BD-00006", productId: "p4", capacity: 7, status: "at_customer", fillLevel: "full", location: "Square Hospital", customerId: "c2", lastMovementAt: daysAgo(5), createdAt: daysAgo(200) },
 ];
 
 export const seedMovements: CylinderMovement[] = [
@@ -158,8 +158,8 @@ export const seedVouchers: Voucher[] = [
 ];
 
 export const seedEmployees: Employee[] = [
-  { id: "emp1", employeeNo: "EMP-001", name: "Karim Uddin", phone: "+880 1710 101010", designation: "Driver", department: "Delivery", joiningDate: daysAgo(400), salary: 22000, status: "active", createdAt: daysAgo(400) },
-  { id: "emp2", employeeNo: "EMP-002", name: "Jahangir Alam", phone: "+880 1710 202020", designation: "Driver", department: "Delivery", joiningDate: daysAgo(350), salary: 22000, status: "active", createdAt: daysAgo(350) },
+  { id: "emp1", employeeNo: "EMP-001", name: "Karim Uddin", phone: "+880 1710 101010", designation: "Deliveryman", department: "Delivery", joiningDate: daysAgo(400), salary: 22000, status: "active", createdAt: daysAgo(400) },
+  { id: "emp2", employeeNo: "EMP-002", name: "Jahangir Alam", phone: "+880 1710 202020", designation: "Deliveryman", department: "Delivery", joiningDate: daysAgo(350), salary: 22000, status: "active", createdAt: daysAgo(350) },
   { id: "emp3", employeeNo: "EMP-003", name: "Nasrin Akter", phone: "+880 1710 303030", designation: "Accounts Officer", department: "Accounts", joiningDate: daysAgo(200), salary: 35000, status: "active", createdAt: daysAgo(200) },
   { id: "emp4", employeeNo: "EMP-004", name: "Rafiqul Islam", phone: "+880 1710 404040", designation: "Warehouse Supervisor", department: "Warehouse", joiningDate: daysAgo(300), salary: 28000, status: "active", createdAt: daysAgo(300) },
 ];
