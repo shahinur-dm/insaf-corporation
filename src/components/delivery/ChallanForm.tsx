@@ -7,6 +7,7 @@ import { customerService } from "@/services/customer.service";
 import { productService } from "@/services/product.service";
 import { salesService } from "@/services/sales.service";
 import { deliveryService } from "@/services/delivery.service";
+import { hrService } from "@/services/hr.service";
 import { deliverySchema } from "@/utils/validators";
 import { genOrderNo } from "@/utils/helpers";
 import type { LineItem } from "@/types";
@@ -37,6 +38,7 @@ export function ChallanForm({
   const { data: customers = [] } = useQuery({ queryKey: ["customers"], queryFn: customerService.list });
   const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: productService.list });
   const { data: sales = [] } = useQuery({ queryKey: ["sales"], queryFn: salesService.list });
+  const { data: employees = [] } = useQuery({ queryKey: ["employees"], queryFn: hrService.listEmployees });
   const { data: existing, isLoading } = useQuery({
     queryKey: ["deliveries", id],
     queryFn: () => deliveryService.get(id!),
@@ -44,6 +46,12 @@ export function ChallanForm({
   });
 
   const openOrders = sales.filter((s) => s.status === "confirmed" || s.status === "invoiced");
+  const deliveryStaff = employees.filter((e) => {
+    if (e.status !== "active") return false;
+    const des = (e.designation || "").toLowerCase();
+    const dept = (e.department || "").toLowerCase();
+    return des === "delivery man" || des === "driver" || dept === "delivery";
+  });
 
   const [salesOrderId, setSalesOrderId] = useState(initialSoId || "");
   const [customerId, setCustomerId] = useState("");
@@ -73,7 +81,7 @@ export function ChallanForm({
   const addItem = () => {
     const p = products[0];
     if (!p) return;
-    setItems([...items, { productId: p.id, productName: p.name, quantity: 1, price: p.price, taxRate: p.taxRate }]);
+    setItems([...items, { productId: p.id, productName: p.name, quantity: 1, price: p.price, taxRate: 0 }]);
   };
 
   const mutation = useMutation({
@@ -168,7 +176,21 @@ export function ChallanForm({
           </div>
           <div className="space-y-1.5">
             <Label>{t("deliveries.driver")}</Label>
-            <Input value={driverName} onChange={(e) => setDriverName(e.target.value)} />
+            {deliveryStaff.length > 0 ? (
+              <Select value={driverName} onValueChange={setDriverName}>
+                <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
+                <SelectContent>
+                  {deliveryStaff.map((e) => (
+                    <SelectItem key={e.id} value={e.name}>{e.name} · {e.designation}</SelectItem>
+                  ))}
+                  {driverName && !deliveryStaff.some((e) => e.name === driverName) && (
+                    <SelectItem value={driverName}>{driverName}</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input value={driverName} onChange={(e) => setDriverName(e.target.value)} />
+            )}
           </div>
           <div className="space-y-1.5">
             <Label>{t("deliveries.vehicle")}</Label>
@@ -203,7 +225,7 @@ export function ChallanForm({
                         disabled={lockItems}
                         onValueChange={(v) => {
                           const p = products.find((x) => x.id === v);
-                          if (p) setItems(items.map((x, i) => i === idx ? { ...x, productId: p.id, productName: p.name, price: p.price, taxRate: p.taxRate } : x));
+                          if (p) setItems(items.map((x, i) => i === idx ? { ...x, productId: p.id, productName: p.name, price: p.price, taxRate: 0 } : x));
                         }}
                       >
                         <SelectTrigger><SelectValue /></SelectTrigger>

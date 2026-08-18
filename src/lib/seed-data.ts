@@ -10,12 +10,12 @@ const daysAgo = (n: number) => iso(new Date(today.getTime() - n * 86400000));
 const monthKey = (d = today) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 
 export const seedCustomers: Customer[] = [
-  { id: "c1", name: "Padma Steel Mills Ltd", phone: "+880 1711 111111", email: "orders@padmasteel.bd", address: "BSCIC Industrial Area, Narayanganj", gstin: "BIN-102345678-0101", openingBalance: 148000, createdAt: daysAgo(120) },
-  { id: "c2", name: "Square Hospital", phone: "+880 1712 222222", email: "purchase@squarehospital.bd", address: "18/F West Panthapath, Dhaka", gstin: "BIN-100987654-0202", openingBalance: 42500, createdAt: daysAgo(90) },
-  { id: "c3", name: "Star Kabab & Restaurant", phone: "+880 1713 333333", address: "Dhanmondi 27, Dhaka", openingBalance: 8500, createdAt: daysAgo(60) },
-  { id: "c4", name: "Cooper's Bakery", phone: "+880 1714 444444", address: "Gulshan Avenue, Dhaka", openingBalance: 0, createdAt: daysAgo(45) },
-  { id: "c5", name: "Rahim Afrooz Industries", phone: "+880 1715 555555", email: "gas@rahimafrooz.bd", address: "Tejgaon I/A, Dhaka", gstin: "BIN-100555555-0303", openingBalance: 92000, createdAt: daysAgo(30) },
-  { id: "c6", name: "Chittagong Port Canteen", phone: "+880 1716 666666", address: "Bandar, Chattogram", openingBalance: 4200, createdAt: daysAgo(20) },
+  { id: "c1", name: "Padma Steel Mills Ltd", phone: "+880 1711 111111", whatsapp: "+880 1711 111111", email: "orders@padmasteel.bd", address: "BSCIC Industrial Area, Narayanganj", gstin: "BIN-102345678-0101", creditLimit: 200000, openingBalance: 148000, openingBalanceType: "receivable", createdAt: daysAgo(120) },
+  { id: "c2", name: "Square Hospital", phone: "+880 1712 222222", whatsapp: "+880 1712 222222", email: "purchase@squarehospital.bd", address: "18/F West Panthapath, Dhaka", gstin: "BIN-100987654-0202", creditLimit: 80000, openingBalance: 42500, openingBalanceType: "receivable", createdAt: daysAgo(90) },
+  { id: "c3", name: "Star Kabab & Restaurant", phone: "+880 1713 333333", whatsapp: "+880 1713 333333", address: "Dhanmondi 27, Dhaka", creditLimit: 15000, openingBalance: 8500, openingBalanceType: "receivable", createdAt: daysAgo(60) },
+  { id: "c4", name: "Cooper's Bakery", phone: "+880 1714 444444", whatsapp: "+880 1714 444444", address: "Gulshan Avenue, Dhaka", creditLimit: 10000, openingBalance: 0, openingBalanceType: "receivable", createdAt: daysAgo(45) },
+  { id: "c5", name: "Rahim Afrooz Industries", phone: "+880 1715 555555", whatsapp: "+880 1715 555555", email: "gas@rahimafrooz.bd", address: "Tejgaon I/A, Dhaka", gstin: "BIN-100555555-0303", creditLimit: 150000, openingBalance: 92000, openingBalanceType: "receivable", createdAt: daysAgo(30) },
+  { id: "c6", name: "Chittagong Port Canteen", phone: "+880 1716 666666", whatsapp: "+880 1716 666666", address: "Bandar, Chattogram", creditLimit: 8000, openingBalance: 4200, openingBalanceType: "receivable", createdAt: daysAgo(20) },
 ];
 
 export const seedSuppliers: Supplier[] = [

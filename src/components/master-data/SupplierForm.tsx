@@ -44,9 +44,10 @@ export function SupplierForm({ id }: { id?: string }) {
   const mutation = useMutation({
     mutationFn: (v: FormValues) => {
       const payload = {
-        ...v,
+        name: v.name,
+        phone: v.phone,
         email: v.email || undefined,
-        gstin: v.gstin || undefined,
+        address: v.address,
         openingBalance: Number(v.openingBalance) || 0,
       };
       return mode === "edit"
@@ -73,7 +74,6 @@ export function SupplierForm({ id }: { id?: string }) {
           <Row label={t("common.name")} error={errors.name?.message}><Input {...register("name")} /></Row>
           <Row label={t("common.phone")} error={errors.phone?.message}><Input {...register("phone")} /></Row>
           <Row label={t("common.email")} error={errors.email?.message}><Input type="email" {...register("email")} /></Row>
-          <Row label={t("customers.gstin")}><Input {...register("gstin")} /></Row>
           <Row label={t("common.address")} error={errors.address?.message} className="md:col-span-2"><Input {...register("address")} /></Row>
           <Row label={t("suppliers.payable")} error={errors.openingBalance?.message}>
             <Input type="number" step="0.01" {...register("openingBalance", { valueAsNumber: true })} />

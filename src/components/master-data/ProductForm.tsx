@@ -58,7 +58,6 @@ export function ProductForm({ id }: { id?: string }) {
           price: existing.price,
           cost: existing.cost ?? 0,
           image: existing.image || "",
-          taxRate: existing.taxRate,
           stock: existing.stock,
           reorderLevel: existing.reorderLevel,
           incomeAccountId: existing.incomeAccountId || "",
@@ -72,7 +71,6 @@ export function ProductForm({ id }: { id?: string }) {
       price: 0,
       cost: 0,
       image: "",
-      taxRate: 5,
       stock: 0,
       reorderLevel: 0,
       incomeAccountId: "",
@@ -85,9 +83,12 @@ export function ProductForm({ id }: { id?: string }) {
     mutationFn: (v: FormValues) => {
       const payload = {
         ...v,
+        price: Number(v.price) || 0,
+        cost: Number(v.cost) || 0,
         image: v.image || undefined,
         incomeAccountId: v.incomeAccountId || undefined,
         expenseAccountId: v.expenseAccountId || undefined,
+        taxRate: 0,
       };
       return mode === "edit"
         ? productService.update(id!, payload as never)
@@ -95,6 +96,7 @@ export function ProductForm({ id }: { id?: string }) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["products"] });
+      if (id) qc.invalidateQueries({ queryKey: ["products", id] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
       toast.success(t("common.save"));
       navigate({ to: id ? "/products/$id" : "/products", params: id ? { id } : undefined });
@@ -178,12 +180,11 @@ export function ProductForm({ id }: { id?: string }) {
             </Select>
           </Row>
           <Row label={t("products.salesPrice")} error={errors.price?.message}>
-            <Input type="number" step="0.01" min={0} {...register("price")} />
+            <Input type="number" step="0.01" min={0} {...register("price", { valueAsNumber: true })} />
           </Row>
           <Row label={t("products.costPrice")} error={errors.cost?.message}>
-            <Input type="number" step="0.01" min={0} {...register("cost")} />
+            <Input type="number" step="0.01" min={0} {...register("cost", { valueAsNumber: true })} />
           </Row>
-          <Row label={t("products.taxPct")}><Input type="number" step="0.01" {...register("taxRate")} /></Row>
           <Row label={t("products.reorder")}><Input type="number" {...register("reorderLevel")} /></Row>
           {mode === "create" && (
             <Row label={t("products.stock")}><Input type="number" {...register("stock")} /></Row>

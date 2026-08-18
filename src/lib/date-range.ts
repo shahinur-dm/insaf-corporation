@@ -93,3 +93,10 @@ export function filterByDateRange<T>(
   if (range.preset === "all" || (!range.from && !range.to)) return rows;
   return rows.filter((row) => isInDateRange(getDate(row), range));
 }
+
+export function formatPeriodLabel(range: DateRange, allLabel: string) {
+  if (range.preset === "all" || (!range.from && !range.to)) return allLabel;
+  const from = range.from || "…";
+  const to = range.to || "…";
+  return from === to ? from : `${from} – ${to}`;
+}

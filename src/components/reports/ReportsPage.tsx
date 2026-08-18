@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDate } from "@/utils/formatters";
 import { useT } from "@/i18n";
 import { EMPTY_DATE_RANGE, filterByDateRange, type DateRange } from "@/lib/date-range";
+import { customerOpeningSigned } from "@/lib/customer-balance";
 import { Printer } from "lucide-react";
 
 const reports = [
@@ -61,7 +62,7 @@ export function ReportsPage() {
       for (const it of so.items) {
         const cur = map.get(it.productId) ?? { productName: it.productName, qty: 0, amount: 0 };
         cur.qty += it.quantity;
-        cur.amount += it.price * it.quantity * (1 + it.taxRate / 100);
+        cur.amount += it.price * it.quantity;
         map.set(it.productId, cur);
       }
     }
@@ -162,7 +163,7 @@ export function ReportsPage() {
     }
     const inventoryValue = products.reduce((sum, p) => sum + (p.stock || 0) * (p.cost || 0), 0);
     
-    let ar = customers.reduce((sum, c) => sum + (c.openingBalance || 0), 0);
+    let ar = customers.reduce((sum, c) => sum + customerOpeningSigned(c), 0);
     ar += sales.reduce((sum, s) => s.status !== "cancelled" ? sum + Math.max(0, s.total - s.paid) : sum, 0);
 
     const currentAssets = cash + bank + inventoryValue + ar;

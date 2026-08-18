@@ -180,7 +180,13 @@ function KanbanView({ sales }: { sales: Awaited<ReturnType<typeof salesService.l
       <CardContent>
         <div className="grid grid-cols-2 gap-2 md:grid-cols-4 md:gap-3">
           {columns.map((col) => {
-            const items = sales.filter((s) => s.status === col.key);
+                const items = sales
+                  .filter((s) => s.status === col.key)
+                  .sort((a, b) => {
+                    const at = Date.parse(a.createdAt || a.date) || 0;
+                    const bt = Date.parse(b.createdAt || b.date) || 0;
+                    return bt - at;
+                  });
             return (
               <div key={col.key} className="rounded-lg border bg-muted/30 p-2">
                 <Link

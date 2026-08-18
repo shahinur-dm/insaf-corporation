@@ -75,7 +75,7 @@ export function MoneyReceiptPrint({
             items={[
               { label: t("common.date"), value: formatDate(receipt.date) },
               { label: t("doc.receivedFrom"), value: receipt.partyName },
-              { label: t("doc.method"), value: t(METHOD_KEY[receipt.method] ?? "common.cash") },
+              { label: t("doc.method"), value: METHOD_KEY[receipt.method] ? t(METHOD_KEY[receipt.method]) : receipt.method },
               { label: t("doc.reference"), value: receipt.reference || "—" },
               { label: t("doc.paymentFor"), value: receipt.notes || "—" },
             ]}

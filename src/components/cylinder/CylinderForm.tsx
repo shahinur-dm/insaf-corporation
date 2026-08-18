@@ -16,8 +16,10 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useT } from "@/i18n";
+import type { ProductCategory } from "@/types";
 
 type FormValues = z.infer<typeof cylinderSchema>;
+const GAS_CATEGORIES: ProductCategory[] = ["LPG", "Industrial", "Medical", "Other"];
 
 export function CylinderForm({ id }: { id?: string }) {
   const t = useT();
@@ -42,6 +44,7 @@ export function CylinderForm({ id }: { id?: string }) {
           capacity: existing.capacity,
           status: existing.status,
           location: existing.location,
+          gasCategory: existing.gasCategory || products.find((p) => p.id === existing.productId)?.category,
         }
       : undefined,
     defaultValues: { status: "in_stock", location: "Warehouse A", capacity: 0 },
@@ -73,10 +76,22 @@ export function CylinderForm({ id }: { id?: string }) {
         <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="grid gap-4 md:grid-cols-2">
           <Row label={t("cylinders.serial")} error={errors.serialNumber?.message}><Input {...register("serialNumber")} /></Row>
           <Row label={t("common.product")}>
-            <Select value={watch("productId")} onValueChange={(v) => setValue("productId", v)}>
+            <Select value={watch("productId")} onValueChange={(v) => {
+              setValue("productId", v);
+              const p = products.find((x) => x.id === v);
+              if (p?.category) setValue("gasCategory", p.category);
+            }}>
               <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
               <SelectContent>
                 {products.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </Row>
+          <Row label={t("cylinders.gasCategory")}>
+            <Select value={watch("gasCategory")} onValueChange={(v) => setValue("gasCategory", v as ProductCategory)}>
+              <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
+              <SelectContent>
+                {GAS_CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
           </Row>

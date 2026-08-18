@@ -7,6 +7,7 @@ import type {
   Expense, LedgerEntry, Cylinder, PurchaseOrder, Voucher, Account, Delivery,
 } from "@/types";
 import { isBankBookAccount, isCashBookAccount } from "@/lib/money-accounts";
+import { creditReminderNotice, customerOpeningSigned } from "@/lib/customer-balance";
 
 type CollName =
   | "customers" | "suppliers" | "products" | "cylinders" | "movements"
@@ -46,7 +47,7 @@ async function ensureSeeded() {
 async function collAll<T>(name: CollName): Promise<T[]> {
   const db = await getDb();
   await ensureSeeded();
-  const docs = await db.collection(name).find({}).sort({ createdAt: -1 }).toArray();
+  const docs = await db.collection(name).find({}).sort({ createdAt: -1, date: -1, timestamp: -1 }).toArray();
   return docs.map((d) => clean<T>(d));
 }
 
@@ -61,7 +62,11 @@ async function collCreate<T extends { id?: string }>(name: CollName, data: any):
   const db = await getDb();
   await ensureSeeded();
   const id = data.id ?? Math.random().toString(36).slice(2, 10);
-  const doc = { ...data, id };
+  const doc = {
+    ...data,
+    id,
+    createdAt: data.createdAt ?? new Date().toISOString(),
+  };
   await db.collection(name).insertOne(doc);
   return clean<T>(doc);
 }
@@ -71,7 +76,7 @@ async function collUpdate<T>(name: CollName, id: string, patch: any): Promise<T>
   await ensureSeeded();
   if (!id) throw new Error("Missing record id");
   if (!patch || typeof patch !== "object") throw new Error("Missing update payload");
-  const { _id, id: _ignore, ...rest } = patch;
+  const { _id, id: _ignore, createdAt: _createdAt, ...rest } = patch;
   const result = await db.collection(name).updateOne({ id: String(id) }, { $set: rest });
   if (result.matchedCount === 0) {
     throw new Error(`Record not found (${name}/${id})`);
@@ -175,7 +180,7 @@ export const dashboardFn = createServerFn({ method: "GET" }).handler(async (): P
 
   const customerDue =
     sales.reduce((a, o) => a + Math.max(0, (o.total || 0) - (o.paid || 0)), 0) +
-    customers.reduce((a, c) => a + Math.max(0, c.openingBalance || 0), 0) -
+    customers.reduce((a, c) => a + Math.max(0, customerOpeningSigned(c)), 0) -
     vouchers.filter((v) => v.partyType === "customer" && v.type === "receipt").reduce((a, v) => a + v.amount, 0) +
     vouchers.filter((v) => v.partyType === "customer" && v.type === "payment").reduce((a, v) => a + v.amount, 0);
 
@@ -228,11 +233,19 @@ export const notificationsFn = createServerFn({ method: "GET" }).handler(async (
   const pendingPurchases = await db.collection("purchases").find({ status: "ordered" }).toArray() as unknown as PurchaseOrder[];
   const pendingSales = await db.collection("sales").find({ status: "confirmed" }).toArray() as unknown as SalesOrder[];
 
+  const customers = await db.collection("customers").find({}).toArray() as unknown as Customer[];
+  const sales = await db.collection("sales").find({}).toArray() as unknown as SalesOrder[];
+  const vouchers = await db.collection("vouchers").find({}).toArray() as unknown as Voucher[];
+  const creditReminders = customers
+    .map((c) => creditReminderNotice(c, sales, vouchers))
+    .filter((n): n is NonNullable<typeof n> => n != null);
+
   return {
     lowStock: lowStock.map(p => ({ id: p.id, name: p.name, stock: p.stock, reorderLevel: p.reorderLevel })),
     pendingDeliveries: pendingDeliveries.map(d => ({ id: d.id, challanNo: d.challanNo, customerName: d.customerName })),
     pendingPurchases: pendingPurchases.map(p => ({ id: p.id, orderNo: p.orderNo, supplierName: p.supplierName })),
-    pendingSales: pendingSales.map(s => ({ id: s.id, orderNo: s.orderNo, customerName: s.customerName }))
+    pendingSales: pendingSales.map(s => ({ id: s.id, orderNo: s.orderNo, customerName: s.customerName })),
+    creditReminders,
   };
 });
 

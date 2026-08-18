@@ -6,7 +6,7 @@ import { Trash2, Plus } from "lucide-react";
 import { customerService } from "@/services/customer.service";
 import { productService } from "@/services/product.service";
 import { salesService } from "@/services/sales.service";
-import { computeTotals, genOrderNo } from "@/utils/helpers";
+import { computeTotals, genOrderNo, lineAmount, paymentStatus } from "@/utils/helpers";
 import { formatCurrency } from "@/utils/formatters";
 import { salesOrderSchema } from "@/utils/validators";
 import type { LineItem } from "@/types";
@@ -58,7 +58,7 @@ export function SalesOrderForm({
   const addItem = () => {
     const p = products[0];
     if (!p) return;
-    setItems([...items, { productId: p.id, productName: p.name, quantity: 1, price: p.price, taxRate: p.taxRate }]);
+    setItems([...items, { productId: p.id, productName: p.name, quantity: 1, price: p.price, taxRate: 0 }]);
   };
 
   const update = (idx: number, patch: Partial<LineItem>) => {
@@ -75,15 +75,16 @@ export function SalesOrderForm({
       if (!customer) throw new Error(t("common.select"));
 
       if (editing && existing) {
-        if (existing.status !== "draft" && existing.status !== "confirmed") {
+        if (existing.status === "cancelled") {
           throw new Error(t("sales.cannotEdit"));
         }
+        const nextItems = items.map((it) => ({ ...it, taxRate: 0 }));
         return salesService.update(id!, {
           customerId,
           customerName: customer.name,
-          items,
+          items: nextItems,
           subtotal: totals.subtotal,
-          tax: totals.tax,
+          tax: 0,
           total: totals.total,
           notes,
         });
@@ -93,7 +94,8 @@ export function SalesOrderForm({
         orderNo: genOrderNo(mode === "quotation" ? "QT" : "SO"),
         customerId, customerName: customer.name,
         date: new Date().toISOString(),
-        items, subtotal: totals.subtotal, tax: totals.tax, total: totals.total,
+        items: items.map((it) => ({ ...it, taxRate: 0 })),
+        subtotal: totals.subtotal, tax: 0, total: totals.total,
         paid: 0, status: mode === "quotation" ? "draft" : "confirmed", notes,
       });
     },
@@ -101,6 +103,8 @@ export function SalesOrderForm({
       qc.invalidateQueries({ queryKey: ["sales"] });
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["vouchers"] });
+      qc.invalidateQueries({ queryKey: ["ledger"] });
       toast.success(editing ? t("sales.updated") : mode === "quotation" ? t("sales.quotationSaved") : t("sales.created"));
       navigate({ to: "/sales/$id", params: { id: order.id } });
     },
@@ -109,7 +113,7 @@ export function SalesOrderForm({
 
   if (editing && isLoading) return <div className="p-6 text-sm text-muted-foreground">{t("common.loading")}</div>;
   if (editing && !existing) return <div className="p-6 text-sm text-destructive">{t("sales.notFound")}</div>;
-  if (editing && existing && existing.status !== "draft" && existing.status !== "confirmed") {
+  if (editing && existing && existing.status === "cancelled") {
     return <div className="p-6 text-sm text-destructive">{t("sales.cannotEdit")}</div>;
   }
   if (!hydrated) return <div className="p-6 text-sm text-muted-foreground">{t("common.loading")}</div>;
@@ -144,19 +148,19 @@ export function SalesOrderForm({
             <Table>
               <TableHeader><TableRow>
                 <TableHead>{t("common.product")}</TableHead><TableHead className="w-24 text-right">{t("common.quantity")}</TableHead>
-                <TableHead className="w-32 text-right">{t("common.price")}</TableHead><TableHead className="w-24 text-right">{t("products.taxPct")}</TableHead>
+                <TableHead className="w-32 text-right">{t("common.price")}</TableHead>
                 <TableHead className="w-32 text-right">{t("common.lineTotal")}</TableHead><TableHead className="w-10" />
               </TableRow></TableHeader>
               <TableBody>
                 {items.length === 0 && (
-                  <TableRow><TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">{t("common.noItems")}</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">{t("common.noItems")}</TableCell></TableRow>
                 )}
                 {items.map((it, idx) => (
                   <TableRow key={idx}>
                     <TableCell>
                       <Select value={it.productId} onValueChange={(v) => {
                         const p = products.find((x) => x.id === v);
-                        if (p) update(idx, { productId: p.id, productName: p.name, price: p.price, taxRate: p.taxRate });
+                        if (p) update(idx, { productId: p.id, productName: p.name, price: p.price, taxRate: 0 });
                       }}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
@@ -166,8 +170,7 @@ export function SalesOrderForm({
                     </TableCell>
                     <TableCell><Input type="number" min={1} value={it.quantity} onChange={(e) => update(idx, { quantity: Number(e.target.value) })} className="text-right" /></TableCell>
                     <TableCell><Input type="number" step="0.01" value={it.price} onChange={(e) => update(idx, { price: Number(e.target.value) })} className="text-right" /></TableCell>
-                    <TableCell><Input type="number" step="0.01" value={it.taxRate} onChange={(e) => update(idx, { taxRate: Number(e.target.value) })} className="text-right" /></TableCell>
-                    <TableCell className="text-right font-medium">{formatCurrency(it.price * it.quantity * (1 + it.taxRate / 100))}</TableCell>
+                    <TableCell className="text-right font-medium">{formatCurrency(lineAmount(it))}</TableCell>
                     <TableCell><Button size="icon" variant="ghost" onClick={() => setItems(items.filter((_, i) => i !== idx))}><Trash2 className="h-4 w-4" /></Button></TableCell>
                   </TableRow>
                 ))}
@@ -180,10 +183,22 @@ export function SalesOrderForm({
         <div className="flex justify-end">
           <div className="w-full max-w-xs space-y-1 text-sm">
             <div className="flex justify-between"><span>{t("common.subtotal")}</span><span>{formatCurrency(totals.subtotal)}</span></div>
-            <div className="flex justify-between"><span>{t("common.tax")}</span><span>{formatCurrency(totals.tax)}</span></div>
             <div className="flex justify-between border-t pt-1 text-base font-semibold">
               <span>{t("common.total")}</span><span>{formatCurrency(totals.total)}</span>
             </div>
+            {editing && existing && (
+              <>
+                <div className="flex justify-between"><span>{t("common.paid")}</span><span>{formatCurrency(existing.paid)}</span></div>
+                <div className="flex justify-between font-semibold">
+                  <span>{t("common.due")}</span>
+                  <span>{formatCurrency(Math.max(0, totals.total - existing.paid))}</span>
+                </div>
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>{t("sales.paymentStatus")}</span>
+                  <span>{t(`sales.${paymentStatus(totals.total, existing.paid)}`)}</span>
+                </div>
+              </>
+            )}
           </div>
         </div>
 

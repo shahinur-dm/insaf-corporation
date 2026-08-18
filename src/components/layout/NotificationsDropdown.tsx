@@ -17,13 +17,15 @@ export function NotificationsDropdown() {
   const pendingDeliveries = notifications?.pendingDeliveries || [];
   const pendingPurchases = notifications?.pendingPurchases || [];
   const pendingSales = notifications?.pendingSales || [];
+  const creditReminders = notifications?.creditReminders || [];
 
   const allIds = useMemo(() => [
     ...lowStock.map(p => `stock-${p.id}`),
     ...pendingDeliveries.map(d => `del-${d.id}`),
     ...pendingPurchases.map(p => `po-${p.id}`),
-    ...pendingSales.map(s => `so-${s.id}`)
-  ], [lowStock, pendingDeliveries, pendingPurchases, pendingSales]);
+    ...pendingSales.map(s => `so-${s.id}`),
+    ...creditReminders.map(c => `cr-${c.id}`),
+  ], [lowStock, pendingDeliveries, pendingPurchases, pendingSales, creditReminders]);
 
   const [seenIds, setSeenIds] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem("seenNotifications") || "[]"); } catch { return []; }
@@ -113,6 +115,20 @@ export function NotificationsDropdown() {
                     <span className="text-sm font-medium">Confirmed Sale</span>
                     <span className="text-xs text-muted-foreground">
                       SO {s.orderNo} for {s.customerName} is confirmed. Needs delivery/invoice.
+                    </span>
+                  </div>
+                </Link>
+              ))}
+
+              {creditReminders.map((c) => (
+                <Link key={`cr-${c.id}`} to="/customers/$id" params={{ id: c.id }} className="flex items-start gap-3 rounded-md p-2 hover:bg-accent">
+                  <div className="mt-0.5 rounded-full bg-amber-100 p-1.5 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400">
+                    <AlertTriangle className="h-4 w-4" />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium">Credit reminder: {c.name}</span>
+                    <span className="text-xs text-muted-foreground">
+                      Outstanding for {c.days} days.
                     </span>
                   </div>
                 </Link>

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Pencil } from "lucide-react";
 import { cylinderService } from "@/services/cylinder.service";
 import { customerService } from "@/services/customer.service";
+import { productService } from "@/services/product.service";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +34,7 @@ export function CylinderTracking({ id }: { id: string }) {
     enabled: !!cylinder,
   });
   const { data: customers = [] } = useQuery({ queryKey: ["customers"], queryFn: customerService.list });
+  const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: productService.list });
 
   const [type, setType] = useState<CylinderMovementType>("issued");
   const [toLocation, setToLocation] = useState("");
@@ -60,6 +62,7 @@ export function CylinderTracking({ id }: { id: string }) {
   if (isLoading) return <div className="p-6 text-sm text-muted-foreground">{t("common.loading")}</div>;
   if (isFetched && !cylinder) return <div className="p-6 text-sm text-destructive">{t("cylinders.notFound")}</div>;
   if (!cylinder) return null;
+  const gasCategory = cylinder.gasCategory || products.find((p) => p.id === cylinder.productId)?.category;
 
   return (
     <div>
@@ -76,6 +79,7 @@ export function CylinderTracking({ id }: { id: string }) {
               </Link>
             </Button>
             <Badge>{t(`status.${cylinder.status}` as any)}</Badge>
+            {gasCategory && <Badge variant="outline">{gasCategory}</Badge>}
           </div>
         }
       />

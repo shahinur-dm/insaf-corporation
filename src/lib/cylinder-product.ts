@@ -1,7 +1,27 @@
-import type { Cylinder, Product } from "@/types";
+import type { Cylinder, CylinderStatus, Product } from "@/types";
 
 export function isCylinderProduct(p?: Pick<Product, "uom"> | null) {
   return p?.uom === "cyl";
+}
+
+/** Map existing cylinder statuses into filled / empty / refill-pending buckets. */
+export function cylinderStatusCounts(cylinders: Pick<Cylinder, "status">[]) {
+  let filled = 0;
+  let empty = 0;
+  let refillPending = 0;
+  for (const c of cylinders) {
+    const bucket = cylinderFillBucket(c.status);
+    if (bucket === "filled") filled += 1;
+    else if (bucket === "refill") refillPending += 1;
+    else empty += 1;
+  }
+  return { total: cylinders.length, filled, empty, refillPending };
+}
+
+export function cylinderFillBucket(status: CylinderStatus): "filled" | "empty" | "refill" {
+  if (status === "refilling") return "refill";
+  if (status === "in_stock" || status === "at_customer" || status === "in_transit") return "filled";
+  return "empty";
 }
 
 export function parseSerials(text: string): string[] {

@@ -75,7 +75,6 @@ function SupplierDetailBody() {
       />
       <Card><CardContent className="pt-6 grid gap-4 md:grid-cols-2 text-sm">
         <div><p className="text-xs uppercase text-muted-foreground">{t("common.phone")}</p><p className="font-medium">{s.phone}</p></div>
-        <div><p className="text-xs uppercase text-muted-foreground">{t("customers.gstin")}</p><p className="font-medium">{s.gstin || "—"}</p></div>
         <div><p className="text-xs uppercase text-muted-foreground">{t("suppliers.payable")}</p><p className="font-medium">{formatCurrency(s.openingBalance)}</p></div>
       </CardContent></Card>
     </div>

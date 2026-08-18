@@ -10,6 +10,7 @@ import { DataTable } from "@/components/common/DataTable";
 import { RowActions, actionsColumnClass } from "@/components/common/RowActions";
 import { PartyNameLink } from "@/components/common/PartyNameLink";
 import { formatCurrency, formatDate } from "@/utils/formatters";
+import { paymentStatus } from "@/utils/helpers";
 import type { SalesOrder, SalesStatus } from "@/types";
 import { useT } from "@/i18n";
 
@@ -36,7 +37,7 @@ export function SalesOrderList() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const canEdit = (r: SalesOrder) => r.status === "draft" || r.status === "confirmed";
+  const canEdit = (r: SalesOrder) => r.status !== "cancelled";
   const canDelete = (r: SalesOrder) => r.status !== "paid";
 
   return (
@@ -54,7 +55,7 @@ export function SalesOrderList() {
       <DataTable<SalesOrder>
         rows={data}
         searchKeys={["orderNo", "customerName"]}
-        dateKey="date"
+        dateKey={(r) => r.createdAt || r.date}
         onRowClick={(r) => navigate({ to: "/sales/$id", params: { id: r.id } })}
         columns={[
           { key: "no", header: t("sales.orderNo"), sortable: true, sortValue: (r) => r.orderNo, render: (r) => <span className="font-mono text-xs">{r.orderNo}</span> },
@@ -63,6 +64,7 @@ export function SalesOrderList() {
           { key: "total", header: t("common.total"), sortable: true, sortValue: (r) => r.total, render: (r) => formatCurrency(r.total), className: "text-right" },
           { key: "paid", header: t("common.paid"), sortable: true, sortValue: (r) => r.paid, render: (r) => formatCurrency(r.paid), className: "text-right" },
           { key: "due", header: t("common.due"), sortable: true, sortValue: (r) => r.total - r.paid, render: (r) => formatCurrency(r.total - r.paid), className: "text-right" },
+          { key: "pay", header: t("sales.paymentStatus"), sortable: true, sortValue: (r) => paymentStatus(r.total, r.paid), render: (r) => t(`sales.${paymentStatus(r.total, r.paid)}`) },
           { key: "st", header: t("common.status"), sortable: true, sortValue: (r) => r.status, render: (r) => <Badge variant={statusVariant[r.status]}>{t(`status.${r.status}` as any)}</Badge> },
           {
             key: "actions",

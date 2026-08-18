@@ -65,7 +65,15 @@ export function DataTable<T extends { id: string }>({
         )
       : dated;
 
-    if (!sortKey) return base;
+    if (!sortKey) {
+      if (!dateKey) return base;
+      return [...base].sort((a, b) => {
+        const at = Date.parse(String(getDate(a) ?? "")) || 0;
+        const bt = Date.parse(String(getDate(b) ?? "")) || 0;
+        if (bt !== at) return bt - at;
+        return String(b.id).localeCompare(String(a.id));
+      });
+    }
     const col = columns.find((c) => c.key === sortKey && c.sortable);
     if (!col) return base;
 

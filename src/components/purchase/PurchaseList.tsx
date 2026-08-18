@@ -61,7 +61,7 @@ export function PurchaseList() {
             render: (r) => (
               <RowActions
                 onView={() => navigate({ to: "/purchases/$id", params: { id: r.id } })}
-                onEdit={r.status === "draft" || r.status === "ordered"
+                onEdit={r.status !== "cancelled"
                   ? () => navigate({ to: "/purchases/$id/edit", params: { id: r.id } })
                   : undefined}
                 onDelete={r.status === "draft" || r.status === "cancelled" ? () => {

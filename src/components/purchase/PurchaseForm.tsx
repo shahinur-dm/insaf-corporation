@@ -6,7 +6,7 @@ import { Trash2, Plus } from "lucide-react";
 import { supplierService } from "@/services/supplier.service";
 import { productService } from "@/services/product.service";
 import { purchaseService } from "@/services/purchase.service";
-import { computeTotals, genOrderNo } from "@/utils/helpers";
+import { computeTotals, genOrderNo, lineAmount, paymentStatus } from "@/utils/helpers";
 import { formatCurrency } from "@/utils/formatters";
 import { purchaseOrderSchema } from "@/utils/validators";
 import type { LineItem } from "@/types";
@@ -54,7 +54,7 @@ export function PurchaseForm({ id }: { id?: string }) {
     if (!p) return;
     setItems([...items, {
       productId: p.id, productName: p.name, quantity: 1,
-      price: p.cost ?? p.price, taxRate: p.taxRate,
+      price: p.cost ?? p.price, taxRate: 0,
     }]);
   };
 
@@ -72,15 +72,18 @@ export function PurchaseForm({ id }: { id?: string }) {
       if (!supplier) throw new Error(t("common.select"));
 
       if (editing && existing) {
-        if (existing.status !== "draft" && existing.status !== "ordered") {
+        if (existing.status === "cancelled") {
           throw new Error(t("purchases.cannotEdit"));
+        }
+        if (totals.total + 0.009 < (existing.paid || 0)) {
+          throw new Error(t("purchases.totalBelowPaid"));
         }
         return purchaseService.update(id!, {
           supplierId,
           supplierName: supplier.name,
-          items,
+          items: items.map((it) => ({ ...it, taxRate: 0 })),
           subtotal: totals.subtotal,
-          tax: totals.tax,
+          tax: 0,
           total: totals.total,
           notes,
         });
@@ -90,7 +93,8 @@ export function PurchaseForm({ id }: { id?: string }) {
         orderNo: genOrderNo("PO"),
         supplierId, supplierName: supplier.name,
         date: new Date().toISOString(),
-        items, subtotal: totals.subtotal, tax: totals.tax, total: totals.total,
+        items: items.map((it) => ({ ...it, taxRate: 0 })),
+        subtotal: totals.subtotal, tax: 0, total: totals.total,
         paid: 0, status: "ordered", notes,
       });
     },
@@ -98,6 +102,8 @@ export function PurchaseForm({ id }: { id?: string }) {
       qc.invalidateQueries({ queryKey: ["purchases"] });
       qc.invalidateQueries({ queryKey: ["purchases", po.id] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["vouchers"] });
+      qc.invalidateQueries({ queryKey: ["ledger"] });
       toast.success(editing ? t("purchases.updated") : t("purchases.created"));
       navigate({ to: "/purchases/$id", params: { id: po.id } });
     },
@@ -106,7 +112,7 @@ export function PurchaseForm({ id }: { id?: string }) {
 
   if (editing && isLoading) return <div className="p-6 text-sm text-muted-foreground">{t("common.loading")}</div>;
   if (editing && !existing) return <div className="p-6 text-sm text-destructive">{t("purchases.notFound")}</div>;
-  if (editing && existing && existing.status !== "draft" && existing.status !== "ordered") {
+  if (editing && existing && existing.status === "cancelled") {
     return <div className="p-6 text-sm text-destructive">{t("purchases.cannotEdit")}</div>;
   }
   if (!hydrated) return <div className="p-6 text-sm text-muted-foreground">{t("common.loading")}</div>;
@@ -141,19 +147,19 @@ export function PurchaseForm({ id }: { id?: string }) {
               <TableHeader><TableRow>
                 <TableHead>{t("common.product")}</TableHead>
                 <TableHead className="w-24 text-right">{t("common.quantity")}</TableHead>
-                <TableHead className="w-32 text-right">{t("purchases.cost")}</TableHead><TableHead className="w-24 text-right">{t("products.taxPct")}</TableHead>
+                <TableHead className="w-32 text-right">{t("purchases.cost")}</TableHead>
                 <TableHead className="w-32 text-right">{t("common.lineTotal")}</TableHead><TableHead className="w-10" />
               </TableRow></TableHeader>
               <TableBody>
                 {items.length === 0 && (
-                  <TableRow><TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">{t("common.noItems")}</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">{t("common.noItems")}</TableCell></TableRow>
                 )}
                 {items.map((it, idx) => (
                   <TableRow key={idx}>
                     <TableCell>
                       <Select value={it.productId} onValueChange={(v) => {
                         const p = products.find((x) => x.id === v);
-                        if (p) update(idx, { productId: p.id, productName: p.name, price: p.cost ?? p.price, taxRate: p.taxRate });
+                        if (p) update(idx, { productId: p.id, productName: p.name, price: p.cost ?? p.price, taxRate: 0 });
                       }}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
@@ -163,8 +169,7 @@ export function PurchaseForm({ id }: { id?: string }) {
                     </TableCell>
                     <TableCell><Input type="number" className="text-right" value={it.quantity} onChange={(e) => update(idx, { quantity: Number(e.target.value) })} /></TableCell>
                     <TableCell><Input type="number" className="text-right" value={it.price} onChange={(e) => update(idx, { price: Number(e.target.value) })} /></TableCell>
-                    <TableCell><Input type="number" className="text-right" value={it.taxRate} onChange={(e) => update(idx, { taxRate: Number(e.target.value) })} /></TableCell>
-                    <TableCell className="text-right font-medium">{formatCurrency(it.price * it.quantity * (1 + it.taxRate / 100))}</TableCell>
+                    <TableCell className="text-right font-medium">{formatCurrency(lineAmount(it))}</TableCell>
                     <TableCell>
                       <Button variant="ghost" size="icon" onClick={() => setItems(items.filter((_, i) => i !== idx))}><Trash2 className="h-4 w-4" /></Button>
                     </TableCell>
@@ -176,8 +181,24 @@ export function PurchaseForm({ id }: { id?: string }) {
           <div className="mt-3 flex justify-end text-sm">
             <div className="w-56 space-y-1">
               <div className="flex justify-between"><span>{t("common.subtotal")}</span><span>{formatCurrency(totals.subtotal)}</span></div>
-              <div className="flex justify-between"><span>{t("common.tax")}</span><span>{formatCurrency(totals.tax)}</span></div>
               <div className="flex justify-between border-t pt-1 font-semibold"><span>{t("common.total")}</span><span>{formatCurrency(totals.total)}</span></div>
+              {editing && existing && (
+                <>
+                  <div className="flex justify-between"><span>{t("common.paid")}</span><span>{formatCurrency(existing.paid)}</span></div>
+                  <div className="flex justify-between font-semibold">
+                    <span>{t("common.due")}</span>
+                    <span>{formatCurrency(Math.max(0, totals.total - existing.paid))}</span>
+                  </div>
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>{t("sales.paymentStatus")}</span>
+                    <span>
+                      {paymentStatus(totals.total, existing.paid) === "unpaid"
+                        ? t("purchases.unpaid")
+                        : t(`sales.${paymentStatus(totals.total, existing.paid)}`)}
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

@@ -1,9 +1,18 @@
 import type { Customer, Employee, PayrollRun, PurchaseOrder, SalesOrder, Supplier, Voucher } from "@/types";
 import { parseRecordTime, type DateRange } from "@/lib/date-range";
+import { customerOpeningSigned } from "@/lib/customer-balance";
 
 export type PartyKind = "customer" | "supplier" | "employee";
 
-export type StatementLineType = "opening" | "invoice" | "purchase" | "payment" | "receipt" | "salary";
+export type StatementLineType =
+  | "opening"
+  | "invoice"
+  | "purchase"
+  | "payment"
+  | "receipt"
+  | "salary"
+  | "adjustment"
+  | "return";
 
 export type StatementLineHref =
   | { to: "/sales/$id"; params: { id: string } }
@@ -13,6 +22,8 @@ export type StatementLine = {
   id: string;
   date: string;
   particulars: string;
+  reference?: string;
+  description?: string;
   type: StatementLineType;
   debit: number;
   credit: number;
@@ -43,6 +54,12 @@ export type PartyStatementModel = {
   totalDebit: number;
   totalCredit: number;
   closingBalance: number;
+  periodSales: number;
+  periodPurchases: number;
+  periodCollections: number;
+  periodPayments: number;
+  periodReturns: number;
+  periodAdjustments: number;
 };
 
 type RawLine = Omit<StatementLine, "balance">;
@@ -55,6 +72,12 @@ function payrollDate(run: PayrollRun) {
   return run.paidAt || run.createdAt || `${run.month}-01`;
 }
 
+function coveredByVouchers(vouchers: Voucher[], refType: "sales" | "purchase", refId: string) {
+  return vouchers
+    .filter((v) => v.refType === refType && v.refId === refId && v.type !== "journal")
+    .reduce((a, v) => a + (Number(v.amount) || 0), 0);
+}
+
 function buildEmployeeRaws(payroll: PayrollRun[], vouchers: Voucher[], partyId: string): RawLine[] {
   const lines: RawLine[] = [];
   for (const run of payroll) {
@@ -64,6 +87,8 @@ function buildEmployeeRaws(payroll: PayrollRun[], vouchers: Voucher[], partyId: 
       id: `sal-${run.id}`,
       date,
       particulars: run.month,
+      reference: run.month,
+      description: "",
       type: "salary",
       debit: 0,
       credit: run.net || 0,
@@ -74,6 +99,8 @@ function buildEmployeeRaws(payroll: PayrollRun[], vouchers: Voucher[], partyId: 
         id: `sal-pay-${run.id}`,
         date: run.paidAt || date,
         particulars: run.month,
+        reference: run.month,
+        description: "",
         type: "payment",
         debit: run.net,
         credit: 0,
@@ -89,6 +116,8 @@ function buildEmployeeRaws(payroll: PayrollRun[], vouchers: Voucher[], partyId: 
       id: `vch-${v.id}`,
       date: v.date,
       particulars: v.voucherNo + (v.notes ? ` — ${v.notes}` : ""),
+      reference: v.voucherNo,
+      description: v.notes || "",
       type: isPayment ? "payment" : "receipt",
       debit: isPayment ? v.amount : 0,
       credit: isPayment ? 0 : v.amount,
@@ -107,31 +136,50 @@ function buildCustomerRaws(sales: SalesOrder[], vouchers: Voucher[], partyId: st
       id: `inv-${inv.id}`,
       date: inv.date,
       particulars: inv.orderNo,
+      reference: inv.orderNo,
+      description: inv.notes || "",
       type: "invoice",
       debit: inv.total || 0,
       credit: 0,
       href: { to: "/sales/$id", params: { id: inv.id } },
     });
-    if ((inv.paid || 0) > 0) {
+    const leftover = (inv.paid || 0) - coveredByVouchers(vouchers, "sales", inv.id);
+    if (leftover > 0.009) {
       lines.push({
         id: `inv-pay-${inv.id}`,
         date: inv.date,
         particulars: inv.orderNo,
-        type: "payment",
+        reference: inv.orderNo,
+        description: "",
+        type: "receipt",
         debit: 0,
-        credit: inv.paid,
+        credit: leftover,
         href: { to: "/sales/$id", params: { id: inv.id } },
       });
     }
   }
   for (const v of vouchers) {
     if (v.partyType !== "customer" || v.partyId !== partyId) continue;
-    if (v.type === "journal") continue;
+    if (v.type === "journal") {
+      lines.push({
+        id: `vch-${v.id}`,
+        date: v.date,
+        particulars: v.voucherNo + (v.notes ? ` — ${v.notes}` : ""),
+        reference: v.voucherNo,
+        description: v.notes || "",
+        type: "adjustment",
+        debit: 0,
+        credit: v.amount || 0,
+      });
+      continue;
+    }
     const isReceipt = v.type === "receipt";
     lines.push({
       id: `vch-${v.id}`,
       date: v.date,
       particulars: v.voucherNo + (v.notes ? ` — ${v.notes}` : ""),
+      reference: v.voucherNo,
+      description: v.notes || "",
       type: isReceipt ? "receipt" : "payment",
       debit: isReceipt ? 0 : v.amount,
       credit: isReceipt ? v.amount : 0,
@@ -149,18 +197,23 @@ function buildSupplierRaws(purchases: PurchaseOrder[], vouchers: Voucher[], part
       id: `po-${po.id}`,
       date: po.date,
       particulars: po.orderNo,
+      reference: po.orderNo,
+      description: po.notes || "",
       type: "purchase",
       debit: 0,
       credit: po.total || 0,
       href: { to: "/purchases/$id", params: { id: po.id } },
     });
-    if ((po.paid || 0) > 0) {
+    const leftover = (po.paid || 0) - coveredByVouchers(vouchers, "purchase", po.id);
+    if (leftover > 0.009) {
       lines.push({
         id: `po-pay-${po.id}`,
         date: po.date,
         particulars: po.orderNo,
+        reference: po.orderNo,
+        description: "",
         type: "payment",
-        debit: po.paid,
+        debit: leftover,
         credit: 0,
         href: { to: "/purchases/$id", params: { id: po.id } },
       });
@@ -168,12 +221,26 @@ function buildSupplierRaws(purchases: PurchaseOrder[], vouchers: Voucher[], part
   }
   for (const v of vouchers) {
     if (v.partyType !== "supplier" || v.partyId !== partyId) continue;
-    if (v.type === "journal") continue;
+    if (v.type === "journal") {
+      lines.push({
+        id: `vch-${v.id}`,
+        date: v.date,
+        particulars: v.voucherNo + (v.notes ? ` — ${v.notes}` : ""),
+        reference: v.voucherNo,
+        description: v.notes || "",
+        type: "adjustment",
+        debit: v.amount || 0,
+        credit: 0,
+      });
+      continue;
+    }
     const isPayment = v.type === "payment";
     lines.push({
       id: `vch-${v.id}`,
       date: v.date,
       particulars: v.voucherNo + (v.notes ? ` — ${v.notes}` : ""),
+      reference: v.voucherNo,
+      description: v.notes || "",
       type: isPayment ? "payment" : "receipt",
       debit: isPayment ? v.amount : 0,
       credit: isPayment ? 0 : v.amount,
@@ -232,6 +299,10 @@ export function groupStatementByMonth(
     });
 }
 
+function periodSum(lines: StatementLine[], type: StatementLineType, side: "debit" | "credit") {
+  return lines.filter((l) => l.type === type).reduce((a, l) => a + l[side], 0);
+}
+
 export function buildPartyStatement(opts: {
   kind: "customer";
   party: Customer;
@@ -280,7 +351,9 @@ export function buildPartyStatement(opts: {
   const fromTs = range.preset !== "all" && range.from ? parseRecordTime(range.from) : null;
   const toTs = range.preset !== "all" && range.to ? parseRecordTime(`${range.to}T23:59:59`) : null;
 
-  const openingSeed = "openingBalance" in party ? (party.openingBalance || 0) : 0;
+  const openingSeed = kind === "customer" && "openingBalance" in party
+    ? customerOpeningSigned(party as Customer)
+    : ("openingBalance" in party ? (party.openingBalance || 0) : 0);
   let opening = openingSeed;
   const period: RawLine[] = [];
   for (const line of raws) {
@@ -306,6 +379,8 @@ export function buildPartyStatement(opts: {
       id: "opening",
       date: openingDate,
       particulars: "",
+      reference: "",
+      description: "",
       type: "opening",
       debit: openingDebit,
       credit: openingCredit,
@@ -320,6 +395,7 @@ export function buildPartyStatement(opts: {
 
   const totalDebit = lines.reduce((a, l) => a + l.debit, 0);
   const totalCredit = lines.reduce((a, l) => a + l.credit, 0);
+  const activity = lines.filter((l) => l.type !== "opening");
 
   return {
     partyId: party.id,
@@ -333,5 +409,11 @@ export function buildPartyStatement(opts: {
     totalDebit,
     totalCredit,
     closingBalance: running,
+    periodSales: periodSum(activity, "invoice", "debit"),
+    periodPurchases: periodSum(activity, "purchase", "credit"),
+    periodCollections: periodSum(activity, "receipt", "credit"),
+    periodPayments: periodSum(activity, "payment", "debit") + periodSum(activity, "payment", "credit"),
+    periodReturns: periodSum(activity, "return", "debit") + periodSum(activity, "return", "credit"),
+    periodAdjustments: periodSum(activity, "adjustment", "debit") + periodSum(activity, "adjustment", "credit"),
   };
 }

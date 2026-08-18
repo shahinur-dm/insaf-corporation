@@ -1,6 +1,44 @@
 import { z } from "zod";
 
+function phoneDigits(value: string) {
+  return value.replace(/\D/g, "");
+}
+
+const phoneSchema = z.string().min(6, "Phone required").refine((value) => {
+  const digits = phoneDigits(value);
+  return digits.length >= 6 && digits.length <= 15;
+}, "Enter a valid phone number");
+
 export const customerSchema = z.object({
+  name: z.string().min(2, "Name required"),
+  phone: phoneSchema,
+  whatsapp: z.string().optional(),
+  address: z.string().min(2, "Address required"),
+  creditLimit: z.coerce.number().min(0, "Cannot be negative"),
+  openingBalance: z.coerce.number().min(0),
+  openingBalanceType: z.enum(["receivable", "payable"]),
+  creditReminderEnabled: z.boolean(),
+  creditReminderDays: z.coerce.number().optional(),
+}).superRefine((val, ctx) => {
+  const whatsapp = (val.whatsapp || "").trim();
+  if (whatsapp) {
+    const digits = phoneDigits(whatsapp);
+    if (digits.length < 6 || digits.length > 15) {
+      ctx.addIssue({ code: "custom", message: "Enter a valid WhatsApp number", path: ["whatsapp"] });
+    }
+  }
+  if ((Number(val.openingBalance) || 0) > 0 && !val.openingBalanceType) {
+    ctx.addIssue({ code: "custom", message: "Select opening balance type", path: ["openingBalanceType"] });
+  }
+  if (val.creditReminderEnabled) {
+    const days = Number(val.creditReminderDays);
+    if (!Number.isInteger(days) || days < 1) {
+      ctx.addIssue({ code: "custom", message: "Enter a positive number of days", path: ["creditReminderDays"] });
+    }
+  }
+});
+
+export const supplierSchema = z.object({
   name: z.string().min(2, "Name required"),
   phone: z.string().min(6, "Phone required"),
   email: z.union([z.literal(""), z.string().email()]).optional(),
@@ -8,8 +46,6 @@ export const customerSchema = z.object({
   gstin: z.union([z.literal(""), z.string()]).optional(),
   openingBalance: z.coerce.number(),
 });
-
-export const supplierSchema = customerSchema;
 
 export const productSchema = z.object({
   code: z.string().min(1, "Code required"),
@@ -19,7 +55,7 @@ export const productSchema = z.object({
   price: z.coerce.number().min(0),
   cost: z.coerce.number().min(0).optional(),
   image: z.string().optional(),
-  taxRate: z.coerce.number().min(0),
+  taxRate: z.coerce.number().min(0).optional(),
   stock: z.coerce.number().min(0),
   reorderLevel: z.coerce.number().min(0),
   incomeAccountId: z.string().optional(),
@@ -33,6 +69,7 @@ export const cylinderSchema = z.object({
   capacity: z.coerce.number().min(0),
   status: z.enum(["in_stock", "at_customer", "in_transit", "refilling", "damaged", "lost"]),
   location: z.string().min(1),
+  gasCategory: z.enum(["LPG", "Industrial", "Medical", "Other"]).optional(),
   customerId: z.string().optional(),
 });
 
@@ -41,7 +78,7 @@ export const lineItemSchema = z.object({
   productName: z.string().min(1),
   quantity: z.coerce.number().min(1),
   price: z.coerce.number().min(0),
-  taxRate: z.coerce.number().min(0),
+  taxRate: z.coerce.number().min(0).optional(),
   cylinderIds: z.array(z.string()).optional(),
 });
 

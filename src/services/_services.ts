@@ -286,7 +286,10 @@ export const customerService = {
   get: (id: string) => call<Customer | null>("get", "customers", id),
   create: (data: Omit<Customer, "id" | "createdAt">) =>
     call<Customer>("create", "customers", undefined, { ...data, createdAt: new Date().toISOString() }),
-  update: (id: string, data: Partial<Customer>) => call<Customer>("update", "customers", id, data),
+  update: (id: string, data: Partial<Customer>) => {
+    const { createdAt: _createdAt, ...rest } = data;
+    return call<Customer>("update", "customers", id, rest);
+  },
   remove: (id: string) => call<{ ok: true }>("remove", "customers", id),
 };
 
@@ -336,7 +339,10 @@ export const cylinderService = {
     const now = new Date().toISOString();
     return call<Cylinder>("create", "cylinders", undefined, { ...data, createdAt: now, lastMovementAt: now });
   },
-  update: (id: string, data: Partial<Cylinder>) => call<Cylinder>("update", "cylinders", id, data),
+  update: async (id: string, data: Partial<Cylinder>) => {
+    const { createdAt: _createdAt, ...rest } = data;
+    return call<Cylinder>("update", "cylinders", id, rest);
+  },
   remove: (id: string) => call<{ ok: true }>("remove", "cylinders", id),
   listMovements: () => call<CylinderMovement[]>("list", "movements"),
   getMovements: async (cylinderId: string) => {
@@ -361,7 +367,10 @@ export const salesService = {
   list: () => call<SalesOrder[]>("list", "sales"),
   get: (id: string) => call<SalesOrder | null>("get", "sales", id),
   create: async (data: Omit<SalesOrder, "id">) => {
-    const order = await call<SalesOrder>("create", "sales", undefined, data);
+    const order = await call<SalesOrder>("create", "sales", undefined, {
+      ...data,
+      createdAt: data.createdAt ?? new Date().toISOString(),
+    });
     if (data.status === "confirmed" || data.status === "invoiced") {
       await adjustStock(data.items, -1, { refType: "sales", refId: order.id, notes: order.orderNo, by: "Sales" });
     }
@@ -370,6 +379,7 @@ export const salesService = {
   update: async (id: string, data: Partial<SalesOrder>) => {
     const existing = await call<SalesOrder | null>("get", "sales", id);
     if (!existing) throw new Error("Order not found");
+    if (existing.status === "cancelled") throw new Error("Cancelled orders cannot be edited");
     const wasStocked = existing.status === "confirmed" || existing.status === "invoiced" || existing.status === "paid";
     if (wasStocked && data.items) {
       await adjustStock(existing.items, 1, {
@@ -379,7 +389,18 @@ export const salesService = {
         refType: "sales", refId: id, notes: `Edit apply ${existing.orderNo}`, by: "Sales",
       });
     }
-    return call<SalesOrder>("update", "sales", id, data);
+    const paid = existing.paid || 0;
+    const total = data.total != null ? Number(data.total) : existing.total;
+    if (total + 0.009 < paid) {
+      throw new Error("Order total cannot be less than amount already paid");
+    }
+    let status = data.status ?? existing.status;
+    if (status !== "draft" && status !== "cancelled") {
+      if (paid + 0.009 >= total && total > 0) status = "paid";
+      else if (paid > 0 && status === "paid") status = "invoiced";
+    }
+    const { paid: _ignorePaid, ...rest } = data;
+    return call<SalesOrder>("update", "sales", id, { ...rest, paid, status, tax: 0 });
   },
   remove: async (id: string) => {
     const existing = await call<SalesOrder | null>("get", "sales", id);
@@ -423,21 +444,23 @@ export const salesService = {
       orderNo: order.orderNo.startsWith("QT") ? order.orderNo.replace(/^QT/, "SO") : order.orderNo,
     });
   },
-  recordPayment: async (id: string, amount: number, method: PaymentMethod = "cash") => {
+  recordPayment: async (id: string, amount: number, method: PaymentMethod = "cash", accountName?: string) => {
     const order = await call<SalesOrder | null>("get", "sales", id);
     if (!order) throw new Error("order not found");
-    if (amount <= 0) throw new Error("Amount must be positive");
-    const due = order.total - order.paid;
-    if (amount > due) throw new Error("Amount exceeds due balance");
-    const paid = order.paid + amount;
+    if (order.status === "cancelled") throw new Error("Cannot pay a cancelled order");
+    if (!Number.isFinite(amount) || amount <= 0) throw new Error("Amount must be positive");
+    const due = Math.max(0, (order.total || 0) - (order.paid || 0));
+    if (amount > due + 0.009) throw new Error("Amount exceeds due balance");
+    const payMethod = method === "bank" ? "bank" : "cash";
+    if (payMethod === "bank" && !accountName) throw new Error("Select a bank account");
+    const account = payMethod === "cash" ? "cash" : accountName!;
+    const paid = (order.paid || 0) + amount;
     let status: SalesStatus = order.status;
     if (paid >= order.total) status = "paid";
     else if (order.status === "confirmed" || order.status === "draft") status = "invoiced";
 
     const updated = await call<SalesOrder>("update", "sales", id, { paid, status });
     const payDate = new Date().toISOString();
-    const account = method === "cheque" || method === "mobile" ? "bank" : method;
-    // Create printable money receipt first so ledger notes can tag voucherNo (safe void)
     const receipt = await call<Voucher>("create", "vouchers", undefined, {
       voucherNo: genOrderNo("MR"),
       type: "receipt",
@@ -642,11 +665,21 @@ export const purchaseService = {
   update: async (id: string, data: Partial<PurchaseOrder>) => {
     const existing = await call<PurchaseOrder | null>("get", "purchases", id);
     if (!existing) throw new Error("Purchase order not found");
-    if (existing.status !== "draft" && existing.status !== "ordered") {
-      throw new Error("Only draft or ordered POs can be edited");
+    if (existing.status === "cancelled") throw new Error("Cancelled purchase orders cannot be edited");
+    const paid = existing.paid || 0;
+    const total = data.total != null ? Number(data.total) : existing.total;
+    if (total + 0.009 < paid) {
+      throw new Error("Purchase total cannot be less than amount already paid");
     }
-    if (existing.paid > 0) throw new Error("Cannot edit a PO with payments");
-    return call<PurchaseOrder>("update", "purchases", id, data);
+    let status = data.status ?? existing.status;
+    if (status !== "cancelled") {
+      if (paid + 0.009 >= total && total > 0) status = "paid";
+      else if (status === "paid") {
+        status = existing.grnNo || existing.receivedAt ? "billed" : "ordered";
+      }
+    }
+    const { paid: _ignorePaid, ...rest } = data;
+    return call<PurchaseOrder>("update", "purchases", id, { ...rest, paid, status, tax: 0 });
   },
   remove: async (id: string) => {
     const existing = await call<PurchaseOrder | null>("get", "purchases", id);
@@ -657,6 +690,10 @@ export const purchaseService = {
     const ledger = await call<LedgerEntry[]>("list", "ledger");
     for (const entry of ledger.filter((e) => e.refType === "purchase" && e.refId === id)) {
       await call("remove", "ledger", entry.id);
+    }
+    const vouchers = await call<Voucher[]>("list", "vouchers");
+    for (const v of vouchers.filter((x) => x.refType === "purchase" && x.refId === id)) {
+      await call("remove", "vouchers", v.id);
     }
     return call<{ ok: true }>("remove", "purchases", id);
   },
@@ -742,29 +779,48 @@ export const purchaseService = {
       items: nextItems,
     });
   },
-  recordPayment: async (id: string, amount: number, method: PaymentMethod = "bank") => {
+  recordPayment: async (id: string, amount: number, method: PaymentMethod = "cash", accountName?: string) => {
     const po = await call<PurchaseOrder | null>("get", "purchases", id);
     if (!po) throw new Error("Purchase order not found");
-    if (amount <= 0) throw new Error("Amount must be positive");
-    const due = po.total - po.paid;
-    if (amount > due) throw new Error("Amount exceeds due balance");
-    const paid = po.paid + amount;
+    if (po.status === "cancelled") throw new Error("Cannot pay a cancelled purchase order");
+    if (!Number.isFinite(amount) || amount <= 0) throw new Error("Amount must be positive");
+    const due = Math.max(0, (po.total || 0) - (po.paid || 0));
+    if (amount > due + 0.009) throw new Error("Amount exceeds due balance");
+    const payMethod = method === "bank" ? "bank" : "cash";
+    if (payMethod === "bank" && !accountName) throw new Error("Select a bank account");
+    const account = payMethod === "cash" ? "cash" : accountName!;
+    const paid = (po.paid || 0) + amount;
     let status: PurchaseStatus = po.status === "ordered" || po.status === "draft" ? "billed" : po.status;
     if (po.status === "received") status = "billed";
-    if (paid >= po.total) status = "paid";
+    if (paid + 0.009 >= po.total) status = "paid";
     const updated = await call<PurchaseOrder>("update", "purchases", id, { paid, status });
-    const account = method === "cheque" || method === "mobile" ? "bank" : method;
+    const payDate = new Date().toISOString();
+    const voucher = await call<Voucher>("create", "vouchers", undefined, {
+      voucherNo: genOrderNo("PV"),
+      type: "payment",
+      date: toVoucherDate(payDate),
+      account,
+      amount,
+      partyType: "supplier",
+      partyId: po.supplierId,
+      partyName: po.supplierName,
+      notes: `Payment for ${po.orderNo}`,
+      refType: "purchase",
+      refId: id,
+      refNo: po.orderNo,
+      createdAt: payDate,
+    });
     await postLedger({
-      date: new Date().toISOString(),
+      date: payDate,
       account,
       direction: "out",
       amount,
       category: "purchase",
       refType: "purchase",
       refId: id,
-      notes: `Payment for ${po.orderNo}`,
+      notes: `Payment for ${po.orderNo} (${voucher.voucherNo})`,
     });
-    return updated;
+    return { order: updated, voucher };
   },
 };
 
@@ -966,7 +1022,10 @@ export const hrService = {
       employeeNo: genOrderNo("EMP"),
       createdAt: new Date().toISOString(),
     }),
-  updateEmployee: (id: string, data: Partial<Employee>) => call<Employee>("update", "employees", id, data),
+  updateEmployee: (id: string, data: Partial<Employee>) => {
+    const { createdAt: _createdAt, ...rest } = data;
+    return call<Employee>("update", "employees", id, rest);
+  },
   removeEmployee: (id: string) => call<{ ok: true }>("remove", "employees", id),
   listPayroll: () => call<PayrollRun[]>("list", "payroll"),
   createPayroll: async (data: Omit<PayrollRun, "id" | "createdAt" | "net" | "status">) => {

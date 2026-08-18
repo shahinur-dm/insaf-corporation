@@ -9,8 +9,9 @@ import { PageHeader } from "@/components/common/PageHeader";
 import { DataTable } from "@/components/common/DataTable";
 import { RowActions, actionsColumnClass } from "@/components/common/RowActions";
 import { PartyNameLink } from "@/components/common/PartyNameLink";
-import { formatCurrency } from "@/utils/formatters";
+import { formatCurrency, formatOpenedOn } from "@/utils/formatters";
 import type { Customer } from "@/types";
+import { customerOpeningSigned } from "@/lib/customer-balance";
 import { useT } from "@/i18n";
 
 export function CustomerList() {
@@ -41,15 +42,16 @@ export function CustomerList() {
       />
       <DataTable<Customer>
         rows={data}
-        searchKeys={["name", "phone", "email"]}
+        searchKeys={["name", "phone", "whatsapp"]}
         dateKey="createdAt"
         onRowClick={(r) => navigate({ to: "/customers/$id", params: { id: r.id } })}
         columns={[
           { key: "name", header: t("common.name"), sortable: true, sortValue: (r) => r.name, render: (r) => <PartyNameLink kind="customer" id={r.id} name={r.name} /> },
           { key: "phone", header: t("common.phone"), sortable: true, sortValue: (r) => r.phone, render: (r) => r.phone },
-          { key: "gstin", header: t("customers.gstin"), render: (r) => r.gstin ?? "—" },
+          { key: "whatsapp", header: t("customers.whatsapp"), render: (r) => r.whatsapp || "—" },
           { key: "address", header: t("common.address"), render: (r) => <span className="text-muted-foreground">{r.address}</span> },
-          { key: "bal", header: t("customers.receivable"), sortable: true, sortValue: (r) => r.openingBalance, render: (r) => formatCurrency(r.openingBalance), className: "text-right" },
+          { key: "bal", header: t("customers.receivable"), sortable: true, sortValue: (r) => customerOpeningSigned(r), render: (r) => formatCurrency(customerOpeningSigned(r)), className: "text-right" },
+          { key: "since", header: t("customers.since"), sortable: true, sortValue: (r) => r.createdAt, render: (r) => <span className="whitespace-nowrap text-xs text-muted-foreground">{formatOpenedOn(r.createdAt)}</span> },
           {
             key: "actions",
             header: t("common.actions"),

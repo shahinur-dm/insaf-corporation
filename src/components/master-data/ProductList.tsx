@@ -53,7 +53,6 @@ export function ProductList() {
               {r.costingMethod === "lifo" ? t("products.costing.lifo") : r.costingMethod === "average" ? t("products.costing.average") : t("products.costing.fifo")}
             </span>
           ) },
-          { key: "tax", header: t("products.taxPct"), sortable: true, sortValue: (r) => r.taxRate, render: (r) => `${r.taxRate}%`, className: "text-right" },
           { key: "stock", header: t("products.stock"), sortable: true, sortValue: (r) => r.stock, render: (r) => (
             <Badge variant={r.stock <= r.reorderLevel ? "destructive" : "outline"}>{r.stock}</Badge>
           ), className: "text-right" },

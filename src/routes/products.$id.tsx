@@ -89,7 +89,6 @@ function ProductDetailBody() {
           <div className="grid flex-1 gap-4 md:grid-cols-3 text-sm">
         <div><p className="text-xs uppercase text-muted-foreground">{t("products.salesPrice")}</p><p className="font-medium">{formatCurrency(p.price)}</p></div>
         <div><p className="text-xs uppercase text-muted-foreground">{t("products.costPrice")}</p><p className="font-medium">{formatCurrency(p.cost ?? 0)}</p></div>
-        <div><p className="text-xs uppercase text-muted-foreground">{t("products.taxPct")}</p><p className="font-medium">{p.taxRate}%</p></div>
         <div><p className="text-xs uppercase text-muted-foreground">{t("products.uom")}</p><p className="font-medium">{p.uom}</p></div>
         <div><p className="text-xs uppercase text-muted-foreground">{t("products.stock")}</p><p className="font-medium">{p.stock}</p></div>
         <div><p className="text-xs uppercase text-muted-foreground">{t("products.reorder")}</p><p className="font-medium">{p.reorderLevel}</p></div>

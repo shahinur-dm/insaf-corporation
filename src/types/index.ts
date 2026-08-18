@@ -1,13 +1,20 @@
 export type ID = string;
 
+export type OpeningBalanceType = "receivable" | "payable";
+
 export interface Customer {
   id: ID;
   name: string;
   phone: string;
+  whatsapp?: string;
   email?: string;
   address: string;
   gstin?: string;
+  creditLimit?: number;
   openingBalance: number;
+  openingBalanceType?: OpeningBalanceType;
+  creditReminderEnabled?: boolean;
+  creditReminderDays?: number;
   createdAt: string;
 }
 
@@ -36,7 +43,7 @@ export interface Product {
   cost?: number;
   /** Compressed data-URL or remote URL */
   image?: string;
-  taxRate: number;
+  taxRate?: number;
   stock: number;
   reorderLevel: number;
   /** Chart of Accounts — Income (sales revenue) */
@@ -73,6 +80,8 @@ export interface Cylinder {
   status: CylinderStatus;
   location: string;
   customerId?: ID;
+  /** Copied from the linked product category (LPG, Industrial, Medical, Other). */
+  gasCategory?: ProductCategory;
   lastMovementAt: string;
   createdAt: string;
 }
@@ -104,7 +113,7 @@ export interface LineItem {
   productName: string;
   quantity: number;
   price: number;
-  taxRate: number;
+  taxRate?: number;
   cylinderIds?: string[];
 }
 
@@ -123,6 +132,7 @@ export interface SalesOrder {
   paid: number;
   status: SalesStatus;
   notes?: string;
+  createdAt?: string;
 }
 
 export interface Delivery {

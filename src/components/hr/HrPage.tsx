@@ -27,6 +27,8 @@ import { FileText, Printer } from "lucide-react";
 import { PayslipPrint } from "./PayslipPrint";
 
 type EmpForm = z.infer<typeof employeeSchema>;
+const DELIVERY_MAN = "Delivery Man";
+const DESIGNATION_PRESETS = ["Delivery Man", "Driver", "Accounts Officer", "Warehouse Supervisor"];
 
 export function HrPage() {
   const t = useT();
@@ -64,7 +66,7 @@ export function HrPage() {
     setDeduction("0");
   };
 
-  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<EmpForm>({
+  const { register, handleSubmit, reset, setValue, watch, formState: { errors, isSubmitting } } = useForm<EmpForm>({
     resolver: zodResolver(employeeSchema),
     defaultValues: {
       joiningDate: new Date().toISOString().slice(0, 10),
@@ -202,7 +204,22 @@ export function HrPage() {
             <form onSubmit={handleSubmit((v) => saveEmp.mutate(v))} className="grid gap-4 md:grid-cols-2">
               <div className="space-y-1.5"><Label>{t("common.name")}</Label><Input {...register("name")} />{errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}</div>
               <div className="space-y-1.5"><Label>{t("common.phone")}</Label><Input {...register("phone")} />{errors.phone && <p className="text-xs text-destructive">{errors.phone.message}</p>}</div>
-              <div className="space-y-1.5"><Label>{t("hr.designation")}</Label><Input {...register("designation")} /></div>
+              <div className="space-y-1.5">
+                <Label>{t("hr.designation")}</Label>
+                <Select value={watch("designation") || undefined} onValueChange={(v) => setValue("designation", v, { shouldValidate: true })}>
+                  <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
+                  <SelectContent>
+                    {Array.from(new Set([
+                      ...DESIGNATION_PRESETS,
+                      ...employees.map((e) => e.designation).filter(Boolean),
+                      watch("designation") || "",
+                    ].filter(Boolean))).map((d) => (
+                      <SelectItem key={d} value={d}>{d === DELIVERY_MAN ? t("hr.deliveryMan") : d}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {errors.designation && <p className="text-xs text-destructive">{errors.designation.message}</p>}
+              </div>
               <div className="space-y-1.5"><Label>{t("hr.department")}</Label><Input {...register("department")} /></div>
               <div className="space-y-1.5"><Label>{t("hr.joiningDate")}</Label><Input type="date" {...register("joiningDate")} /></div>
               <div className="space-y-1.5"><Label>{t("hr.basicSalary")}</Label><Input type="number" {...register("salary")} /></div>

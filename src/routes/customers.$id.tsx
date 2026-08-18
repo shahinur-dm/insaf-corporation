@@ -7,7 +7,8 @@ import { PageHeader } from "@/components/common/PageHeader";
 import { DetailOrOutlet } from "@/components/common/DetailOrOutlet";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatCurrency, formatDate } from "@/utils/formatters";
+import { formatCurrency, formatOpenedOn } from "@/utils/formatters";
+import { customerOpeningSigned } from "@/lib/customer-balance";
 import { useT } from "@/i18n";
 
 export const Route = createFileRoute("/customers/$id")({
@@ -77,10 +78,23 @@ function CustomerDetailBody() {
       />
       <Card><CardContent className="pt-6 grid gap-4 md:grid-cols-2 text-sm">
         <Info label={t("common.phone")} value={c.phone} />
-        <Info label={t("common.email")} value={c.email || "—"} />
-        <Info label={t("customers.gstin")} value={c.gstin || "—"} />
-        <Info label={t("customers.receivable")} value={formatCurrency(c.openingBalance)} />
-        <Info label={t("common.date")} value={formatDate(c.createdAt)} />
+        <Info label={t("customers.whatsapp")} value={c.whatsapp || "—"} />
+        <Info label={t("common.address")} value={c.address} />
+        <Info label={t("customers.creditLimit")} value={formatCurrency(c.creditLimit || 0)} />
+        <Info label={t("customers.openingBalance")} value={formatCurrency(Math.abs(c.openingBalance || 0))} />
+        <Info
+          label={t("customers.openingType")}
+          value={(c.openingBalanceType ?? (customerOpeningSigned(c) < 0 ? "payable" : "receivable")) === "payable"
+            ? t("customers.payable")
+            : t("customers.receivable")}
+        />
+        <Info
+          label={t("customers.reminder")}
+          value={c.creditReminderEnabled
+            ? `${t("customers.reminderOn")} · ${c.creditReminderDays || 0} ${t("customers.reminderDaysUnit")}`
+            : t("customers.reminderOff")}
+        />
+        <Info label={t("customers.since")} value={formatOpenedOn(c.createdAt)} />
       </CardContent></Card>
     </div>
   );

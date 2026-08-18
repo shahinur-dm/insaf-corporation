@@ -4,6 +4,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { Plus, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { cylinderService } from "@/services/cylinder.service";
+import { productService } from "@/services/product.service";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -12,6 +13,8 @@ import { DataTable } from "@/components/common/DataTable";
 import { RowActions, actionsColumnClass } from "@/components/common/RowActions";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
 import { CylinderLedger } from "@/components/cylinder/CylinderLedger";
+import { Card, CardContent } from "@/components/ui/card";
+import { cylinderStatusCounts } from "@/lib/cylinder-product";
 import { formatDateTime } from "@/utils/formatters";
 import type { Cylinder, CylinderStatus } from "@/types";
 import { EMPTY_DATE_RANGE, type DateRange } from "@/lib/date-range";
@@ -29,6 +32,10 @@ export function CylinderRegistry() {
   const [tab, setTab] = useState<"registry" | "tracking">("tracking");
   const [range, setRange] = useState<DateRange>(EMPTY_DATE_RANGE);
   const { data = [] } = useQuery({ queryKey: ["cylinders"], queryFn: cylinderService.list });
+  const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: productService.list });
+  const counts = cylinderStatusCounts(data);
+  const gasCategoryOf = (c: Cylinder) =>
+    c.gasCategory || products.find((p) => p.id === c.productId)?.category || "—";
 
   const remove = useMutation({
     mutationFn: (id: string) => cylinderService.remove(id),
@@ -66,6 +73,21 @@ export function CylinderRegistry() {
             {t("cylinders.registryTab")}
           </Button>
         </div>
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {([
+          ["cylinders.total", counts.total],
+          ["cylinders.filled", counts.filled],
+          ["cylinders.empty", counts.empty],
+          ["cylinders.refillPending", counts.refillPending],
+        ] as const).map(([key, value]) => (
+          <Card key={key}>
+            <CardContent className="pt-4 pb-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t(key)}</p>
+              <p className="mt-1 text-xl font-semibold tabular-nums">{value}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
       {tab === "tracking" && (
         <div className="space-y-4">
           <div className="no-print rounded-xl border bg-card/60 p-3">
@@ -85,6 +107,7 @@ export function CylinderRegistry() {
         onRowClick={(r) => navigate({ to: "/cylinders/$id", params: { id: r.id } })}
         columns={[
           { key: "sn", header: t("cylinders.serial"), sortable: true, sortValue: (r) => r.serialNumber, render: (r) => <span className="font-mono">{r.serialNumber}</span> },
+          { key: "cat", header: t("cylinders.gasCategory"), sortable: true, sortValue: (r) => gasCategoryOf(r), render: (r) => gasCategoryOf(r) },
           { key: "cap", header: t("cylinders.capacity"), sortable: true, sortValue: (r) => r.capacity, render: (r) => `${r.capacity}` },
           { key: "st", header: t("common.status"), sortable: true, sortValue: (r) => r.status, render: (r) => <Badge variant={statusVariant[r.status]}>{t(`status.${r.status}` as any)}</Badge> },
           { key: "loc", header: t("cylinders.location"), sortable: true, sortValue: (r) => r.location, render: (r) => r.location },
