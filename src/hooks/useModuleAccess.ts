@@ -2,12 +2,19 @@ import { useQuery } from "@tanstack/react-query";
 import { useRouteContext } from "@tanstack/react-router";
 import { getPowerMatrixFn } from "@/lib/settings.functions";
 import { canRoleAccess, pathToModule, urlToModule, type AppModule } from "@/lib/access";
+import { defaultMatrix, loadPowerMatrix, savePowerMatrix } from "@/lib/settings-store";
 
 export function usePowerMatrix() {
   return useQuery({
     queryKey: ["powerMatrix"],
-    queryFn: () => getPowerMatrixFn(),
-    staleTime: 60_000,
+    queryFn: async () => {
+      const remote = await getPowerMatrixFn();
+      savePowerMatrix(remote);
+      return remote;
+    },
+    placeholderData: () => (typeof window === "undefined" ? defaultMatrix() : loadPowerMatrix()),
+    retry: 1,
+    staleTime: 0,
   });
 }
 

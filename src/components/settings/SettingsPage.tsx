@@ -23,8 +23,9 @@ import {
   type AppModule, type AppRole,
 } from "@/lib/settings-store";
 import {
-  getPowerMatrixFn, resetPowerMatrixFn, savePowerMatrixFn, type PowerMatrix,
+  resetPowerMatrixFn, savePowerMatrixFn, type PowerMatrix,
 } from "@/lib/settings.functions";
+import { usePowerMatrix } from "@/hooks/useModuleAccess";
 import {
   listAppUsersFn, removeAppUserFn, upsertAppUserFn, type PublicAppUser,
 } from "@/lib/users.functions";
@@ -43,11 +44,8 @@ export function SettingsPage() {
     queryKey: ["appUsers"],
     queryFn: () => listAppUsersFn(),
   });
-  const { data: serverMatrix, isLoading: matrixLoading } = useQuery({
-    queryKey: ["powerMatrix"],
-    queryFn: () => getPowerMatrixFn(),
-  });
-  const [matrix, setMatrix] = useState<PowerMatrix>(defaultMatrix);
+  const { data: serverMatrix, isLoading: matrixLoading } = usePowerMatrix();
+  const [matrix, setMatrix] = useState<PowerMatrix>(() => defaultMatrix());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -62,9 +60,13 @@ export function SettingsPage() {
     }
   }, [serverMatrix]);
 
+  const savedBaseline = useMemo(
+    () => serverMatrix ?? defaultMatrix(),
+    [serverMatrix],
+  );
   const dirty = useMemo(
-    () => (serverMatrix ? !matricesEqual(matrix, serverMatrix) : false),
-    [matrix, serverMatrix],
+    () => !matricesEqual(matrix, savedBaseline),
+    [matrix, savedBaseline],
   );
 
   const saveMatrix = useMutation({
@@ -75,7 +77,7 @@ export function SettingsPage() {
       qc.setQueryData(["powerMatrix"], saved);
       toast.success(t("settings.roleUpdated"));
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: Error) => toast.error(e.message || t("error.hint")),
   });
 
   const resetMatrix = useMutation({
@@ -139,10 +141,14 @@ export function SettingsPage() {
 
   const toggleAccess = (r: AppRole, mod: AppModule) => {
     if (r === "Administrator") return;
-    setMatrix((prev) => ({
-      ...prev,
-      [r]: { ...prev[r], [mod]: !prev[r][mod] },
-    }));
+    setMatrix((prev) => {
+      const fallback = defaultMatrix()[r];
+      const row = prev[r] ?? fallback;
+      return {
+        ...prev,
+        [r]: { ...row, [mod]: !row[mod] },
+      };
+    });
   };
 
   return (
@@ -387,8 +393,9 @@ export function SettingsPage() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    disabled={resetMatrix.isPending || matrixLoading}
+                    disabled={resetMatrix.isPending || matrixLoading || saveMatrix.isPending}
                     onClick={() => {
+                      if (resetMatrix.isPending || saveMatrix.isPending) return;
                       if (!confirm(t("settings.matrixResetConfirm"))) return;
                       resetMatrix.mutate();
                     }}
@@ -400,7 +407,10 @@ export function SettingsPage() {
                     type="button"
                     size="sm"
                     disabled={!dirty || saveMatrix.isPending || matrixLoading}
-                    onClick={() => saveMatrix.mutate()}
+                    onClick={() => {
+                      if (saveMatrix.isPending || !dirty) return;
+                      saveMatrix.mutate();
+                    }}
                   >
                     <Save className="mr-1.5 h-3.5 w-3.5" />
                     {t("settings.saveMatrix")}
