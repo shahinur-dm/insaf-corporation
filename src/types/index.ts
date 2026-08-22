@@ -137,6 +137,7 @@ export interface SalesOrder {
   createdAt?: string;
   /** Assigned deliveryman name when set on the sales order */
   driverName?: string;
+  receiverName?: string;
 }
 
 export interface Delivery {
@@ -151,6 +152,8 @@ export interface Delivery {
   status: "pending" | "confirmed" | "delivered" | "in_transit" | "returned";
   date: string;
   confirmedAt?: string;
+  receiverName?: string;
+  emptyReturned?: number;
 }
 
 export type PurchaseStatus = "draft" | "ordered" | "received" | "billed" | "paid" | "cancelled";
@@ -186,7 +189,7 @@ export interface StockMovement {
   cogsAmount?: number;
   costingMethod?: CostingMethod;
   consumptions?: LayerConsumption[];
-  refType?: "sales" | "purchase" | "delivery" | "adjustment";
+  refType?: "sales" | "purchase" | "delivery" | "adjustment" | "refill";
   refId?: string;
   notes?: string;
   by: string;

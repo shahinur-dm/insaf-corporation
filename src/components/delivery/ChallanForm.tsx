@@ -2,13 +2,14 @@ import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { Plus, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { customerService } from "@/services/customer.service";
 import { productService } from "@/services/product.service";
 import { salesService } from "@/services/sales.service";
 import { deliveryService } from "@/services/delivery.service";
 import { hrService } from "@/services/hr.service";
 import { isDeliveryStaff } from "@/lib/hr-staff";
+import { remainingOrderQty } from "@/lib/cylinder-inventory";
 import { deliverySchema } from "@/utils/validators";
 import { genOrderNo } from "@/utils/helpers";
 import type { LineItem } from "@/types";
@@ -39,6 +40,7 @@ export function ChallanForm({
   const { data: customers = [] } = useQuery({ queryKey: ["customers"], queryFn: customerService.list });
   const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: productService.list });
   const { data: sales = [] } = useQuery({ queryKey: ["sales"], queryFn: salesService.list });
+  const { data: deliveries = [] } = useQuery({ queryKey: ["deliveries"], queryFn: deliveryService.list });
   const { data: employees = [] } = useQuery({ queryKey: ["employees"], queryFn: hrService.listEmployees });
   const { data: existing, isLoading } = useQuery({
     queryKey: ["deliveries", id],
@@ -52,6 +54,7 @@ export function ChallanForm({
   const [salesOrderId, setSalesOrderId] = useState(initialSoId || "");
   const [customerId, setCustomerId] = useState("");
   const [driverName, setDriverName] = useState("");
+  const [receiverName, setReceiverName] = useState("");
   const [vehicleNo, setVehicleNo] = useState("");
   const [items, setItems] = useState<LineItem[]>([]);
   const [hydrated, setHydrated] = useState(!editing);
@@ -61,6 +64,7 @@ export function ChallanForm({
     setSalesOrderId(existing.salesOrderId || "");
     setCustomerId(existing.customerId);
     setDriverName(existing.driverName);
+    setReceiverName(existing.receiverName || "");
     setVehicleNo(existing.vehicleNo);
     setItems(existing.items.map((it) => ({ ...it })));
     setHydrated(true);
@@ -73,13 +77,8 @@ export function ChallanForm({
     setCustomerId(so.customerId);
     setItems(so.items.map((it) => ({ ...it })));
     if (so.driverName) setDriverName(so.driverName);
+    if (so.receiverName) setReceiverName(so.receiverName);
   }, [salesOrderId, sales, editing]);
-
-  const addItem = () => {
-    const p = products[0];
-    if (!p) return;
-    setItems([...items, { productId: p.id, productName: p.name, quantity: 1, price: p.price, taxRate: 0 }]);
-  };
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -87,6 +86,7 @@ export function ChallanForm({
         customerId,
         salesOrderId: salesOrderId || undefined,
         driverName,
+        receiverName: receiverName || undefined,
         vehicleNo,
         items,
       });
@@ -101,6 +101,7 @@ export function ChallanForm({
           customerName: c.name,
           salesOrderId: salesOrderId || undefined,
           driverName,
+          receiverName: receiverName || undefined,
           vehicleNo,
           items,
         });
@@ -112,6 +113,7 @@ export function ChallanForm({
         customerName: c.name,
         salesOrderId: salesOrderId || undefined,
         driverName,
+        receiverName: receiverName || undefined,
         vehicleNo,
         items,
         status: "pending",
@@ -135,10 +137,35 @@ export function ChallanForm({
   if (!hydrated) return <div className="p-6 text-sm text-muted-foreground">{t("common.loading")}</div>;
 
   const lockItems = !!salesOrderId;
+  const recentDocs = sales
+    .filter((s) => s.status === "confirmed" || s.status === "invoiced" || s.status === "paid")
+    .slice(0, 8);
+  const selectedSo = sales.find((s) => s.id === salesOrderId);
+  const prevDeliveries = deliveries.filter((d) => d.salesOrderId && d.salesOrderId === salesOrderId);
 
   return (
     <div>
       <PageHeader title={editing ? t("deliveries.editTitle") : t("deliveries.new")} backTo={editing ? { to: "/deliveries/$id", params: { id: id! } } : "/deliveries"} />
+      {!editing && recentDocs.length > 0 && (
+        <Card className="mb-4">
+          <CardContent className="pt-6">
+            <h3 className="mb-3 text-sm font-semibold">{t("deliveries.recentDocs")}</h3>
+            <div className="flex flex-wrap gap-2">
+              {recentDocs.map((s) => (
+                <Button
+                  key={s.id}
+                  type="button"
+                  size="sm"
+                  variant={salesOrderId === s.id ? "default" : "outline"}
+                  onClick={() => setSalesOrderId(s.id)}
+                >
+                  {s.orderNo} · {s.customerName}
+                </Button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
       <Card><CardContent className="pt-6 space-y-6">
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <div className="space-y-1.5">
@@ -193,14 +220,22 @@ export function ChallanForm({
             <Label>{t("deliveries.vehicle")}</Label>
             <Input value={vehicleNo} onChange={(e) => setVehicleNo(e.target.value)} />
           </div>
+          <div className="space-y-1.5">
+            <Label>{t("deliveries.receiver")}</Label>
+            <Input value={receiverName} onChange={(e) => setReceiverName(e.target.value)} />
+          </div>
         </div>
+        {selectedSo && (
+          <p className="text-xs text-muted-foreground">
+            {t("sales.invoice")} {selectedSo.orderNo}
+            {selectedSo.receiverName ? ` · ${t("sales.receiver")}: ${selectedSo.receiverName}` : ""}
+            {prevDeliveries.length > 0 ? ` · ${t("deliveries.prevDelivery")}: ${prevDeliveries.map((d) => d.challanNo).join(", ")}` : ""}
+          </p>
+        )}
 
         <div>
-          <div className="mb-2 flex items-center justify-between">
+          <div className="mb-2">
             <h3 className="text-sm font-semibold">{t("sales.item")}</h3>
-            <Button size="sm" variant="outline" onClick={addItem} disabled={lockItems}>
-              <Plus className="mr-1 h-3 w-3" /> {t("common.addItem")}
-            </Button>
           </div>
           <div className="overflow-hidden rounded-md border">
             <div className="overflow-x-auto">
@@ -208,11 +243,12 @@ export function ChallanForm({
               <TableHeader><TableRow>
                 <TableHead>{t("common.product")}</TableHead>
                 <TableHead className="w-24 text-right">{t("common.quantity")}</TableHead>
+                <TableHead className="w-24 text-right">{t("deliveries.remaining")}</TableHead>
                 <TableHead className="w-10" />
               </TableRow></TableHeader>
               <TableBody>
                 {items.length === 0 && (
-                  <TableRow><TableCell colSpan={3} className="py-8 text-center text-sm text-muted-foreground">{t("common.noItems")}</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={4} className="py-8 text-center text-sm text-muted-foreground">{t("common.noItems")}</TableCell></TableRow>
                 )}
                 {items.map((it, idx) => (
                   <TableRow key={idx}>
@@ -240,6 +276,9 @@ export function ChallanForm({
                         onChange={(e) => setItems(items.map((x, i) => i === idx ? { ...x, quantity: Number(e.target.value) } : x))}
                         className="text-right"
                       />
+                    </TableCell>
+                    <TableCell className="text-right text-xs text-muted-foreground">
+                      {selectedSo ? remainingOrderQty(selectedSo, deliveries, it.productId) : "—"}
                     </TableCell>
                     <TableCell>
                       {!lockItems && (

@@ -86,6 +86,7 @@ export const salesOrderSchema = z.object({
   customerId: z.string().min(1, "Select a customer"),
   notes: z.string().optional(),
   driverName: z.string().optional(),
+  receiverName: z.string().optional(),
   items: z.array(lineItemSchema).min(1, "Add at least one item"),
 });
 
@@ -99,6 +100,7 @@ export const deliverySchema = z.object({
   customerId: z.string().min(1, "Select a customer"),
   salesOrderId: z.string().optional(),
   driverName: z.string().min(2, "Driver name required"),
+  receiverName: z.string().optional(),
   vehicleNo: z.string().min(2, "Vehicle number required"),
   items: z.array(lineItemSchema).min(1, "Add at least one item"),
 });

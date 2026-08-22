@@ -210,6 +210,11 @@ async function restoreStock(productId: string, qty: number, meta?: StockMeta, fa
   });
 }
 
+async function hasStockOut(refType: NonNullable<StockMovement["refType"]>, refId: string) {
+  const all = await call<StockMovement[]>("list", "stockMovements");
+  return all.some((m) => m.refType === refType && m.refId === refId && m.type === "out");
+}
+
 async function adjustStock(
   items: LineItem[],
   direction: 1 | -1,
@@ -382,17 +387,13 @@ export const salesService = {
       ...data,
       createdAt: data.createdAt ?? new Date().toISOString(),
     });
-    if (data.status === "confirmed" || data.status === "invoiced") {
-      await adjustStock(data.items, -1, { refType: "sales", refId: order.id, notes: order.orderNo, by: "Sales" });
-    }
     return order;
   },
   update: async (id: string, data: Partial<SalesOrder>) => {
     const existing = await call<SalesOrder | null>("get", "sales", id);
     if (!existing) throw new Error("Order not found");
     if (existing.status === "cancelled") throw new Error("Cancelled orders cannot be edited");
-    const wasStocked = existing.status === "confirmed" || existing.status === "invoiced" || existing.status === "paid";
-    if (wasStocked && data.items) {
+    if (data.items && (await hasStockOut("sales", id))) {
       await adjustStock(existing.items, 1, {
         refType: "sales", refId: id, notes: `Edit reverse ${existing.orderNo}`, by: "Sales",
       });
@@ -416,7 +417,7 @@ export const salesService = {
   remove: async (id: string) => {
     const existing = await call<SalesOrder | null>("get", "sales", id);
     if (!existing) throw new Error("Order not found");
-    if (existing.status === "confirmed" || existing.status === "invoiced" || existing.status === "paid") {
+    if (await hasStockOut("sales", id)) {
       await adjustStock(existing.items, 1, {
         refType: "sales", refId: id, notes: `Delete ${existing.orderNo}`, by: "Sales",
       });
@@ -437,11 +438,10 @@ export const salesService = {
     if (order.status === "cancelled" || order.status === "paid") {
       throw new Error(`Cannot change status from ${order.status}`);
     }
-    if (order.status === "draft" && (status === "confirmed" || status === "invoiced")) {
-      await adjustStock(order.items, -1, { refType: "sales", refId: id, notes: order.orderNo, by: "Sales" });
-    }
     if ((order.status === "confirmed" || order.status === "invoiced") && status === "cancelled") {
-      await adjustStock(order.items, 1, { refType: "sales", refId: id, notes: `Cancel ${order.orderNo}`, by: "Sales" });
+      if (await hasStockOut("sales", id)) {
+        await adjustStock(order.items, 1, { refType: "sales", refId: id, notes: `Cancel ${order.orderNo}`, by: "Sales" });
+      }
     }
     return call<SalesOrder>("update", "sales", id, { status });
   },
@@ -449,7 +449,6 @@ export const salesService = {
     const order = await call<SalesOrder | null>("get", "sales", id);
     if (!order) throw new Error("Quotation not found");
     if (order.status !== "draft") throw new Error("Only draft quotations can be converted");
-    await adjustStock(order.items, -1, { refType: "sales", refId: id, notes: order.orderNo, by: "Sales" });
     return call<SalesOrder>("update", "sales", id, {
       status: "confirmed",
       orderNo: order.orderNo.startsWith("QT") ? order.orderNo.replace(/^QT/, "SO") : order.orderNo,
@@ -565,11 +564,14 @@ export const deliveryService = {
       }
     }
 
-    if (!delivery.salesOrderId) {
+    const alreadyOut = await hasStockOut("delivery", id);
+    const soAlreadyOut = delivery.salesOrderId ? await hasStockOut("sales", delivery.salesOrderId) : false;
+    if (!alreadyOut && !soAlreadyOut) {
       await adjustStock(nextItems, -1, {
-        refType: "delivery", refId: id, notes: delivery.challanNo, by: "Delivery",
+        refType: "delivery", refId: id, notes: delivery.challanNo, by: delivery.receiverName || "Delivery",
       });
-    } else {
+    }
+    if (delivery.salesOrderId) {
       const so = await call<SalesOrder | null>("get", "sales", delivery.salesOrderId);
       if (so && so.status === "confirmed") {
         await call("update", "sales", so.id, { status: "invoiced" });
@@ -610,6 +612,7 @@ export const deliveryService = {
     return call<Delivery>("update", "deliveries", id, {
       status: "delivered",
       confirmedAt: new Date().toISOString(),
+      emptyReturned: payload?.returnedIds?.length || 0,
       items: nextItems,
     });
   },
@@ -840,6 +843,38 @@ export const purchaseService = {
 
 export const inventoryService = {
   listMovements: () => call<StockMovement[]>("list", "stockMovements"),
+  completeRefill: async (productId: string, quantity: number, by?: string) => {
+    const product = await call<Product | null>("get", "products", productId);
+    if (!product) throw new Error("Product not found");
+    if (quantity <= 0) throw new Error("Quantity must be positive");
+    const cylinders = await call<Cylinder[]>("list", "cylinders");
+    const empties = cylinders
+      .filter((c) => c.productId === productId && (c.status === "refilling" || (cylinderIsEmpty(c) && c.status !== "at_customer" && c.status !== "in_transit")))
+      .sort((a, b) => a.lastMovementAt.localeCompare(b.lastMovementAt));
+    if (empties.length < quantity) throw new Error(`Only ${empties.length} empty cylinder(s) ready to refill`);
+    const picked = empties.slice(0, quantity);
+    for (const c of picked) {
+      await cylinderService.addMovement({
+        cylinderId: c.id,
+        type: "refilled",
+        fromLocation: c.location,
+        toLocation: "Warehouse",
+        notes: `Refill complete for ${product.name}`,
+        by: by || "Warehouse",
+      });
+    }
+    await call("create", "stockMovements", undefined, {
+      date: new Date().toISOString(),
+      productId: product.id,
+      productName: product.name,
+      type: "in",
+      quantity,
+      balanceAfter: product.stock,
+      refType: "refill",
+      notes: `Refill complete × ${quantity}`,
+      by: by || "Warehouse",
+    });
+  },
   adjust: async (productId: string, quantity: number, type: "in" | "out" | "adjust", notes?: string) => {
     const product = await call<Product | null>("get", "products", productId);
     if (!product) throw new Error("Product not found");

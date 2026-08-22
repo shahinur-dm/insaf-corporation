@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { Trash2, Plus } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { customerService } from "@/services/customer.service";
 import { productService } from "@/services/product.service";
 import { salesService } from "@/services/sales.service";
@@ -24,6 +24,10 @@ import {
 import { useT } from "@/i18n";
 import { hrService } from "@/services/hr.service";
 import { isDeliveryStaff } from "@/lib/hr-staff";
+import { cylinderService } from "@/services/cylinder.service";
+import { deliveryService } from "@/services/delivery.service";
+import { inventoryService } from "@/services/inventory.service";
+import { buildProductInventory } from "@/lib/cylinder-inventory";
 
 export function SalesOrderForm({
   mode = "order",
@@ -46,8 +50,15 @@ export function SalesOrderForm({
     enabled: editing,
   });
 
+  const { data: cylinders = [] } = useQuery({ queryKey: ["cylinders"], queryFn: cylinderService.list });
+  const { data: deliveries = [] } = useQuery({ queryKey: ["deliveries"], queryFn: deliveryService.list });
+  const { data: sales = [] } = useQuery({ queryKey: ["sales"], queryFn: salesService.list });
+  const { data: movements = [] } = useQuery({ queryKey: ["stockMovements"], queryFn: inventoryService.listMovements });
+  const stockRows = buildProductInventory(products, cylinders, sales, deliveries, movements);
+
   const [customerId, setCustomerId] = useState<string>("");
   const [driverName, setDriverName] = useState("");
+  const [receiverName, setReceiverName] = useState("");
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState<LineItem[]>([]);
   const [hydrated, setHydrated] = useState(!editing);
@@ -56,16 +67,17 @@ export function SalesOrderForm({
     if (!existing) return;
     setCustomerId(existing.customerId);
     setDriverName(existing.driverName ?? "");
+    setReceiverName(existing.receiverName ?? "");
     setNotes(existing.notes ?? "");
     setItems(existing.items);
     setHydrated(true);
   }, [existing]);
 
-  const addItem = () => {
+  useEffect(() => {
+    if (editing || items.length > 0 || !products[0]) return;
     const p = products[0];
-    if (!p) return;
-    setItems([...items, { productId: p.id, productName: p.name, quantity: 1, price: p.price, taxRate: 0 }]);
-  };
+    setItems([{ productId: p.id, productName: p.name, quantity: 1, price: p.price, taxRate: 0 }]);
+  }, [editing, items.length, products]);
 
   const update = (idx: number, patch: Partial<LineItem>) => {
     setItems(items.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
@@ -75,10 +87,18 @@ export function SalesOrderForm({
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const parsed = salesOrderSchema.safeParse({ customerId, notes, items, driverName: driverName || undefined });
+      const parsed = salesOrderSchema.safeParse({
+        customerId, notes, items, driverName: driverName || undefined, receiverName: receiverName || undefined,
+      });
       if (!parsed.success) throw new Error(parsed.error.errors[0]?.message || "Invalid form");
       const customer = customers.find((c) => c.id === customerId);
       if (!customer) throw new Error(t("common.select"));
+      for (const it of items) {
+        const row = stockRows.find((r) => r.productId === it.productId);
+        if (row && it.quantity > row.available) {
+          throw new Error(t("sales.stockWarn", { qty: row.available }));
+        }
+      }
 
       if (editing && existing) {
         if (existing.status === "cancelled") {
@@ -94,6 +114,7 @@ export function SalesOrderForm({
           total: totals.total,
           notes,
           driverName: driverName || undefined,
+          receiverName: receiverName.trim() || undefined,
         });
       }
 
@@ -105,6 +126,7 @@ export function SalesOrderForm({
         subtotal: totals.subtotal, tax: 0, total: totals.total,
         paid: 0, status: mode === "quotation" ? "draft" : "confirmed", notes,
         driverName: driverName || undefined,
+        receiverName: receiverName.trim() || undefined,
       });
     },
     onSuccess: (order) => {
@@ -113,6 +135,9 @@ export function SalesOrderForm({
       qc.invalidateQueries({ queryKey: ["dashboard"] });
       qc.invalidateQueries({ queryKey: ["vouchers"] });
       qc.invalidateQueries({ queryKey: ["ledger"] });
+      qc.invalidateQueries({ queryKey: ["stockMovements"] });
+      qc.invalidateQueries({ queryKey: ["cylinders"] });
+      qc.invalidateQueries({ queryKey: ["deliveries"] });
       toast.success(editing ? t("sales.updated") : mode === "quotation" ? t("sales.quotationSaved") : t("sales.created"));
       navigate({ to: "/sales/$id", params: { id: order.id } });
     },
@@ -139,6 +164,13 @@ export function SalesOrderForm({
                 {customers.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
               </SelectContent>
             </Select>
+            {customers.find((c) => c.id === customerId)?.phone && (
+              <p className="text-xs text-muted-foreground">{customers.find((c) => c.id === customerId)?.phone} · {customers.find((c) => c.id === customerId)?.address}</p>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <Label>{t("sales.receiver")}</Label>
+            <Input value={receiverName} onChange={(e) => setReceiverName(e.target.value)} />
           </div>
           <div className="space-y-1.5">
             <Label>{t("deliveries.deliveryman")}</Label>
@@ -166,9 +198,8 @@ export function SalesOrderForm({
         </div>
 
         <div>
-          <div className="mb-2 flex items-center justify-between">
+          <div className="mb-2">
             <h3 className="text-sm font-semibold">{t("sales.item")}</h3>
-            <Button size="sm" variant="outline" onClick={addItem}><Plus className="mr-1 h-3 w-3" /> {t("common.addItem")}</Button>
           </div>
           <div className="overflow-hidden rounded-md border">
             <div className="overflow-x-auto">
@@ -195,7 +226,16 @@ export function SalesOrderForm({
                         </SelectContent>
                       </Select>
                     </TableCell>
-                    <TableCell><Input type="number" min={1} value={it.quantity} onChange={(e) => update(idx, { quantity: Number(e.target.value) })} className="text-right" /></TableCell>
+                    <TableCell>
+                      <Input type="number" min={1} value={it.quantity} onChange={(e) => update(idx, { quantity: Number(e.target.value) })} className="text-right" />
+                      {(() => {
+                        const row = stockRows.find((r) => r.productId === it.productId);
+                        if (row && it.quantity > row.available) {
+                          return <p className="mt-1 text-[10px] text-destructive">{t("sales.stockWarn", { qty: row.available })}</p>;
+                        }
+                        return null;
+                      })()}
+                    </TableCell>
                     <TableCell><Input type="number" step="0.01" value={it.price} onChange={(e) => update(idx, { price: Number(e.target.value) })} className="text-right" /></TableCell>
                     <TableCell className="text-right font-medium">{formatCurrency(lineAmount(it))}</TableCell>
                     <TableCell><Button size="icon" variant="ghost" onClick={() => setItems(items.filter((_, i) => i !== idx))}><Trash2 className="h-4 w-4" /></Button></TableCell>

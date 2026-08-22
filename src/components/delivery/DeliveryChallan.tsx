@@ -63,6 +63,7 @@ export function DeliveryChallan({ id }: { id: string }) {
       qc.invalidateQueries({ queryKey: ["dashboard"] });
       qc.invalidateQueries({ queryKey: ["cylinders"] });
       qc.invalidateQueries({ queryKey: ["cylinderMovements"] });
+      qc.invalidateQueries({ queryKey: ["stockMovements"] });
       setAssignOpen(false);
       toast.success(t("deliveries.confirm"));
     },
@@ -189,6 +190,8 @@ export function DeliveryChallan({ id }: { id: string }) {
                 },
                 { label: t("deliveries.deliveryman"), value: d.driverName },
                 { label: t("deliveries.vehicle"), value: d.vehicleNo },
+                { label: t("deliveries.receiver"), value: d.receiverName || salesOrder?.receiverName || "—" },
+                { label: t("deliveries.emptyReceived"), value: String(d.emptyReturned ?? 0) },
                 { label: t("doc.dispatchDate"), value: dispatchDate },
               ]}
             />

@@ -197,6 +197,9 @@ export function InvoiceView({ id }: { id: string }) {
                 items={[
                   { label: docNoLabel, value: <span className="font-mono">{order.orderNo}</span> },
                   { label: t("common.date"), value: formatDate(order.date) },
+                  { label: t("sales.orderStatus"), value: t(`status.${order.status}` as any) },
+                  { label: t("sales.paymentStatus"), value: t(`sales.${paymentStatus(order.total, order.paid)}`) },
+                  ...(order.receiverName ? [{ label: t("sales.receiver"), value: order.receiverName }] : []),
                   ...(isQuote
                     ? [
                         { label: t("sales.validity"), value: validityDate || t("sales.validityDays") },
