@@ -4,7 +4,7 @@ import type { PublicAppUser } from "./users.types";
 
 export type { AppUserDoc, PublicAppUser } from "./users.types";
 
-export const listAppUsersFn = createServerFn({ method: "GET" }).handler(async (): Promise<PublicAppUser[]> => {
+export const listAppUsersFn = createServerFn({ method: "POST" }).handler(async (): Promise<PublicAppUser[]> => {
   const { requireUser } = await import("./session.server");
   const { listAppUsers } = await import("./users.server");
   await requireUser();
@@ -28,7 +28,10 @@ export const upsertAppUserFn = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<PublicAppUser> => {
     const { requireUser } = await import("./session.server");
     const { upsertAppUser } = await import("./users.server");
-    await requireUser();
+    const { roleCanAccess } = await import("./settings.server");
+    const user = await requireUser();
+    const allowed = user.role === "Administrator" || (await roleCanAccess(user.role, "settings"));
+    if (!allowed) throw new Error("Not allowed to manage users");
     return upsertAppUser(data);
   });
 

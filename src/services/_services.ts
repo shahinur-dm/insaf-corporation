@@ -8,7 +8,7 @@ import type {
 } from "@/types";
 import { crudFn, dashboardFn, notificationsFn } from "@/lib/data.functions";
 import { genOrderNo } from "@/utils/helpers";
-import { cylinderIsEmpty } from "@/lib/cylinder-product";
+import { cylinderIsEmpty, pickFifo, suggestSerials } from "@/lib/cylinder-product";
 
 const call = async <T,>(op: any, coll: any, id?: string, payload?: any): Promise<T> => {
   return (await crudFn({ data: { op, coll, id, payload } })) as T;
@@ -215,6 +215,30 @@ async function hasStockOut(refType: NonNullable<StockMovement["refType"]>, refId
   return all.some((m) => m.refType === refType && m.refId === refId && m.type === "out");
 }
 
+async function hasReservation(orderId: string) {
+  const all = await call<StockMovement[]>("list", "stockMovements");
+  return all.some((m) => m.refType === "sales" && m.refId === orderId && /^Reserved\b/i.test(m.notes || ""));
+}
+
+async function postReservationMoves(order: SalesOrder, verb: "Reserved" | "Reservation released") {
+  if (verb === "Reserved" && (await hasReservation(order.id))) return;
+  for (const item of order.items) {
+    const product = await call<Product | null>("get", "products", item.productId);
+    await call("create", "stockMovements", undefined, {
+      date: new Date().toISOString(),
+      productId: item.productId,
+      productName: item.productName,
+      type: verb === "Reserved" ? "adjust" : "return",
+      quantity: item.quantity,
+      balanceAfter: product?.stock ?? 0,
+      refType: "sales",
+      refId: order.id,
+      notes: `${verb} ${item.quantity} × ${item.productName} for ${order.orderNo}`,
+      by: order.receiverName || "Sales",
+    });
+  }
+}
+
 async function adjustStock(
   items: LineItem[],
   direction: 1 | -1,
@@ -387,6 +411,9 @@ export const salesService = {
       ...data,
       createdAt: data.createdAt ?? new Date().toISOString(),
     });
+    if (data.status === "confirmed" || data.status === "invoiced") {
+      await postReservationMoves(order, "Reserved");
+    }
     return order;
   },
   update: async (id: string, data: Partial<SalesOrder>) => {
@@ -421,6 +448,8 @@ export const salesService = {
       await adjustStock(existing.items, 1, {
         refType: "sales", refId: id, notes: `Delete ${existing.orderNo}`, by: "Sales",
       });
+    } else if (existing.status === "confirmed" || existing.status === "invoiced" || existing.status === "paid") {
+      await postReservationMoves(existing, "Reservation released");
     }
     const ledger = await call<LedgerEntry[]>("list", "ledger");
     for (const entry of ledger.filter((e) => e.refType === "sales" && e.refId === id)) {
@@ -438,9 +467,14 @@ export const salesService = {
     if (order.status === "cancelled" || order.status === "paid") {
       throw new Error(`Cannot change status from ${order.status}`);
     }
+    if (order.status === "draft" && (status === "confirmed" || status === "invoiced")) {
+      await postReservationMoves({ ...order, status }, "Reserved");
+    }
     if ((order.status === "confirmed" || order.status === "invoiced") && status === "cancelled") {
       if (await hasStockOut("sales", id)) {
         await adjustStock(order.items, 1, { refType: "sales", refId: id, notes: `Cancel ${order.orderNo}`, by: "Sales" });
+      } else {
+        await postReservationMoves(order, "Reservation released");
       }
     }
     return call<SalesOrder>("update", "sales", id, { status });
@@ -449,10 +483,12 @@ export const salesService = {
     const order = await call<SalesOrder | null>("get", "sales", id);
     if (!order) throw new Error("Quotation not found");
     if (order.status !== "draft") throw new Error("Only draft quotations can be converted");
-    return call<SalesOrder>("update", "sales", id, {
+    const updated = await call<SalesOrder>("update", "sales", id, {
       status: "confirmed",
       orderNo: order.orderNo.startsWith("QT") ? order.orderNo.replace(/^QT/, "SO") : order.orderNo,
     });
+    await postReservationMoves(updated, "Reserved");
+    return updated;
   },
   recordPayment: async (id: string, amount: number, method: PaymentMethod = "cash", accountName?: string) => {
     const order = await call<SalesOrder | null>("get", "sales", id);
@@ -878,19 +914,76 @@ export const inventoryService = {
   adjust: async (productId: string, quantity: number, type: "in" | "out" | "adjust", notes?: string) => {
     const product = await call<Product | null>("get", "products", productId);
     if (!product) throw new Error("Product not found");
-    if (quantity <= 0) throw new Error("Quantity must be positive");
-    const meta: StockMeta = { refType: "adjustment", notes: notes || "Manual stock adjustment", by: "Warehouse" };
-    if (type === "in") {
-      await receiveStock(productId, quantity, product.cost ?? 0, meta);
-      return;
+    if (!Number.isFinite(quantity) || quantity < 0) throw new Error("Quantity cannot be negative");
+    if (type !== "adjust" && quantity <= 0) throw new Error("Quantity must be positive");
+    const cylinders = await call<Cylinder[]>("list", "cylinders");
+    const isCyl = product.uom === "cyl";
+    const fullNow = cylinders.filter((c) => c.productId === productId && c.status !== "damaged" && c.status !== "lost" && !cylinderIsEmpty(c) && (c.status === "in_stock" || c.status === "in_transit")).length;
+    const current = isCyl ? fullNow : (product.stock ?? 0);
+    let delta = 0;
+    if (type === "in") delta = quantity;
+    else if (type === "out") delta = -quantity;
+    else delta = quantity - current;
+    if (delta === 0) return;
+    if (current + delta < 0) throw new Error(`Insufficient stock for ${product.name} (available ${current})`);
+    const refId = genOrderNo("ADJ");
+    const prior = await call<StockMovement[]>("list", "stockMovements");
+    if (prior.some((m) => m.refType === "adjustment" && m.refId === refId)) {
+      throw new Error("Duplicate adjustment");
     }
-    if (type === "out") {
-      await issueStock(productId, quantity, meta);
-      return;
+    const next = current + delta;
+    const meta: StockMeta = {
+      refType: "adjustment",
+      refId,
+      notes: `ADJ ${refId} · ${product.name} · previous ${current} · qty ${delta > 0 ? "+" : ""}${delta} · updated ${next}${notes ? ` · ${notes}` : ""}`,
+      by: notes?.trim() || "Warehouse",
+    };
+    if (delta > 0) await receiveStock(productId, delta, product.cost ?? 0, meta);
+    else if ((product.stock ?? 0) >= -delta) await issueStock(productId, -delta, meta);
+    else {
+      await call("update", "products", product.id, { stock: Math.max(0, (product.stock ?? 0) + delta) });
+      await postStockMovement({
+        date: new Date().toISOString(),
+        productId: product.id,
+        productName: product.name,
+        type: "out",
+        quantity: -delta,
+        balanceAfter: Math.max(0, (product.stock ?? 0) + delta),
+        refType: "adjustment",
+        refId,
+        notes: meta.notes,
+        by: meta.by ?? "Warehouse",
+      });
     }
-    const current = product.stock ?? 0;
-    if (quantity > current) await receiveStock(productId, quantity - current, product.cost ?? 0, meta);
-    else if (quantity < current) await issueStock(productId, current - quantity, meta);
+    if (isCyl) {
+      if (delta > 0) {
+        const serials = suggestSerials(product.code, delta).map((s, i) => `${s}-${Math.random().toString(36).slice(2, 6)}`);
+        for (const serial of serials) {
+          await cylinderService.create({
+            serialNumber: serial,
+            productId: product.id,
+            capacity: product.category === "LPG" ? Number(product.name.match(/\d+/)?.[0] || 0) : 0,
+            status: "in_stock",
+            fillLevel: "full",
+            location: "Warehouse",
+            gasCategory: product.category,
+          });
+        }
+      } else {
+        const ids = pickFifo(cylinders, productId, -delta);
+        if (ids.length < -delta) throw new Error(`Only ${ids.length} full cylinder(s) available to decrease`);
+        for (const cid of ids) {
+          await cylinderService.addMovement({
+            cylinderId: cid,
+            type: "lost",
+            fromLocation: "Warehouse",
+            toLocation: "Adjustment",
+            notes: `Stock adjustment ${refId}`,
+            by: meta.by || "Warehouse",
+          });
+        }
+      }
+    }
   },
 };
 

@@ -159,12 +159,23 @@ export function InventoryPage() {
             <h3 className="font-semibold">{t("inventory.adjust")}</h3>
             <div className="space-y-1.5">
               <Label>{t("common.product")}</Label>
-              <Select value={productId} onValueChange={setProductId}>
+              <Select value={productId || undefined} onValueChange={setProductId}>
                 <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
-                <SelectContent>
-                  {products.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                <SelectContent className="max-h-72">
+                  {products.filter((p) => p.id).map((p) => {
+                    const row = rows.find((r) => r.productId === p.id);
+                    const current = row?.full ?? p.stock ?? 0;
+                    return (
+                      <SelectItem key={p.id} value={p.id}>{p.name} · {current}</SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
+              {productId && (
+                <p className="text-xs text-muted-foreground">
+                  {t("inventory.fullAvail")}: {rows.find((r) => r.productId === productId)?.full ?? products.find((p) => p.id === productId)?.stock ?? 0}
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label>{t("common.type")}</Label>
@@ -186,7 +197,7 @@ export function InventoryPage() {
               <Label>{type === "refill" ? t("inventory.receivedBy") : t("common.notes")}</Label>
               <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
             </div>
-            <Button className="w-full" disabled={!productId || adjust.isPending} onClick={() => adjust.mutate()}>
+            <Button className="w-full" disabled={!productId || adjust.isPending || Number(qty) < 0} onClick={() => { if (adjust.isPending) return; adjust.mutate(); }}>
               {t("inventory.apply")}
             </Button>
           </CardContent>

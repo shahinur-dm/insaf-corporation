@@ -216,13 +216,22 @@ export function SalesOrderForm({
                 {items.map((it, idx) => (
                   <TableRow key={idx}>
                     <TableCell>
-                      <Select value={it.productId} onValueChange={(v) => {
+                      <Select value={it.productId || undefined} onValueChange={(v) => {
                         const p = products.find((x) => x.id === v);
                         if (p) update(idx, { productId: p.id, productName: p.name, price: p.price, taxRate: 0 });
                       }}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {products.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                        <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
+                        <SelectContent className="max-h-72">
+                          {products.filter((p) => p.id).map((p) => {
+                            const row = stockRows.find((r) => r.productId === p.id);
+                            const avail = row?.available ?? p.stock ?? 0;
+                            const oos = avail <= 0;
+                            return (
+                              <SelectItem key={p.id} value={p.id} disabled={oos && p.id !== it.productId}>
+                                {p.name} · {p.code} · {avail} {p.uom}{oos ? ` · ${t("inventory.status.out")}` : ""}
+                              </SelectItem>
+                            );
+                          })}
                         </SelectContent>
                       </Select>
                     </TableCell>

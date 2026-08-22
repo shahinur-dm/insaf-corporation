@@ -121,7 +121,13 @@ export function SettingsPage() {
           active,
         },
       }),
-    onSuccess: () => {
+    onSuccess: (saved) => {
+      qc.setQueryData(["appUsers"], (old: PublicAppUser[] | undefined) => {
+        const list = old ?? [];
+        const idx = list.findIndex((u) => u.id === saved.id);
+        if (idx >= 0) return list.map((u) => (u.id === saved.id ? saved : u));
+        return [...list, saved];
+      });
       qc.invalidateQueries({ queryKey: ["appUsers"] });
       toast.success(editingId ? t("settings.userUpdated") : t("settings.userAdded"));
       resetForm();
@@ -292,6 +298,7 @@ export function SettingsPage() {
                     className="w-full"
                     disabled={saveUser.isPending}
                     onClick={() => {
+                      if (saveUser.isPending) return;
                       if (!username.trim() || !displayName.trim()) {
                         toast.error(t("common.name"));
                         return;
