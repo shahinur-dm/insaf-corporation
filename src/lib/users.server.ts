@@ -1,7 +1,8 @@
 import { getDb } from "./mongo.server";
 import { seedAppUsers } from "./seed-data";
-import type { AppRole } from "./settings-store";
+import { APP_ROLES, type AppRole } from "./settings-store";
 import type { AppUserDoc, PublicAppUser } from "./users.types";
+import { hashPassword, verifyPassword } from "./password.server";
 
 export type { AppUserDoc, PublicAppUser } from "./users.types";
 
@@ -24,9 +25,26 @@ async function ensureUsers() {
   }
 }
 
-function toPublic(u: AppUserDoc): PublicAppUser {
-  const { password: _p, ...rest } = u;
-  return { ...rest, hasPassword: Boolean(_p) };
+function toPublic(u: AppUserDoc | null | undefined): PublicAppUser {
+  if (!u) throw new Error("User not found");
+  return {
+    id: String(u.id),
+    username: String(u.username),
+    displayName: String(u.displayName),
+    role: u.role,
+    active: Boolean(u.active),
+    createdAt: String(u.createdAt || ""),
+    hasPassword: Boolean(u.password),
+  };
+}
+
+function mongoErrorMessage(e: unknown) {
+  const err = e as { code?: number; message?: string };
+  if (err?.code === 11000 || /E11000|duplicate key/i.test(err?.message || "")) {
+    return "Username already exists";
+  }
+  if (e instanceof Error && e.message) return e.message;
+  return "Could not save user";
 }
 
 export async function findUserByCredentials(username: string, password: string): Promise<AppUserDoc | null> {
@@ -38,7 +56,7 @@ export async function findUserByCredentials(username: string, password: string):
   });
   if (!doc) return null;
   const user = clean<AppUserDoc>(doc);
-  if (user.password !== password) return null;
+  if (!verifyPassword(password, user.password)) return null;
   return user;
 }
 
@@ -71,43 +89,49 @@ export async function upsertAppUser(data: {
   password?: string;
   active?: boolean;
 }): Promise<PublicAppUser> {
-  await ensureUsers();
-  const db = await getDb();
-  const username = data.username.trim().toLowerCase();
-  if (!username || !data.displayName.trim()) throw new Error("Username and display name required");
+  try {
+    await ensureUsers();
+    const db = await getDb();
+    const username = data.username.trim().toLowerCase();
+    if (!username || !data.displayName.trim()) throw new Error("Username and display name required");
+    if (!APP_ROLES.includes(data.role)) throw new Error("Invalid role");
 
-  if (data.id) {
-    const existing = await db.collection("appUsers").findOne({ id: data.id });
-    if (!existing) throw new Error("User not found");
-    const clash = await db.collection("appUsers").findOne({ username, id: { $ne: data.id } });
-    if (clash) throw new Error("Username already taken");
-    const patch: Record<string, unknown> = {
+    if (data.id) {
+      const existing = await db.collection("appUsers").findOne({ id: data.id });
+      if (!existing) throw new Error("User not found");
+      const clash = await db.collection("appUsers").findOne({ username, id: { $ne: data.id } });
+      if (clash) throw new Error("Username already exists");
+      const patch: Record<string, unknown> = {
+        username,
+        displayName: data.displayName.trim(),
+        role: data.role,
+        active: data.active ?? existing.active ?? true,
+      };
+      if (data.password && data.password.trim()) patch.password = hashPassword(data.password.trim());
+      await db.collection("appUsers").updateOne({ id: data.id }, { $set: patch });
+      const doc = await db.collection("appUsers").findOne({ id: data.id });
+      return toPublic(clean<AppUserDoc>(doc));
+    }
+
+    const clash = await db.collection("appUsers").findOne({ username });
+    if (clash) throw new Error("Username already exists");
+    if (!data.password?.trim()) throw new Error("Password required");
+    const id = Math.random().toString(36).slice(2, 10);
+    const doc: AppUserDoc = {
+      id,
       username,
+      password: hashPassword(data.password.trim()),
       displayName: data.displayName.trim(),
       role: data.role,
-      active: data.active ?? existing.active ?? true,
+      active: data.active ?? true,
+      createdAt: new Date().toISOString(),
     };
-    if (data.password && data.password.trim()) patch.password = data.password.trim();
-    await db.collection("appUsers").updateOne({ id: data.id }, { $set: patch });
-    const doc = await db.collection("appUsers").findOne({ id: data.id });
-    return toPublic(clean<AppUserDoc>(doc));
+    await db.collection("appUsers").insertOne({ ...doc });
+    const saved = await db.collection("appUsers").findOne({ id });
+    return toPublic(clean<AppUserDoc>(saved));
+  } catch (e) {
+    throw new Error(mongoErrorMessage(e));
   }
-
-  const clash = await db.collection("appUsers").findOne({ username });
-  if (clash) throw new Error("Username already taken");
-  if (!data.password?.trim()) throw new Error("Password required");
-  const id = Math.random().toString(36).slice(2, 10);
-  const doc: AppUserDoc = {
-    id,
-    username,
-    password: data.password.trim(),
-    displayName: data.displayName.trim(),
-    role: data.role,
-    active: data.active ?? true,
-    createdAt: new Date().toISOString(),
-  };
-  await db.collection("appUsers").insertOne(doc);
-  return toPublic(doc);
 }
 
 export async function removeAppUser(id: string) {

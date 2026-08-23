@@ -132,7 +132,11 @@ export function SettingsPage() {
       toast.success(editingId ? t("settings.userUpdated") : t("settings.userAdded"));
       resetForm();
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: Error) => {
+      const raw = e.message || "Could not save user";
+      const cleaned = raw.replace(/^Server Error \(specific \s*\d+\)[:\s]*/i, "").trim();
+      toast.error(cleaned || raw);
+    },
   });
 
   const removeUser = useMutation({

@@ -32,7 +32,11 @@ export const upsertAppUserFn = createServerFn({ method: "POST" })
     const user = await requireUser();
     const allowed = user.role === "Administrator" || (await roleCanAccess(user.role, "settings"));
     if (!allowed) throw new Error("Not allowed to manage users");
-    return upsertAppUser(data);
+    try {
+      return await upsertAppUser(data);
+    } catch (e) {
+      throw new Error(e instanceof Error ? e.message : "Could not save user");
+    }
   });
 
 export const removeAppUserFn = createServerFn({ method: "POST" })
