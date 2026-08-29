@@ -1,7 +1,35 @@
-import type { Cylinder, CylinderStatus, Product } from "@/types";
+import type { Cylinder, CylinderStatus, LineItem, Product } from "@/types";
 
-export function isCylinderProduct(p?: Pick<Product, "uom"> | null) {
-  return p?.uom === "cyl";
+/** Serialized cylinder tracking (loan / issue / return). Gas-only products never move. */
+export function isCylinderProduct(p?: Pick<Product, "uom" | "productType"> | null) {
+  if (!p) return false;
+  if (p.productType === "gas") return false;
+  if (p.productType === "cylinder") return true;
+  return p.uom === "cyl";
+}
+
+/** Company cylinder on a sales line that should not hit the invoice. */
+export function isCylinderMovementOnly(item: Pick<LineItem, "price" | "sellCylinder">, p?: Pick<Product, "uom" | "productType"> | null) {
+  if (p?.productType !== "cylinder") return false;
+  if (item.sellCylinder) return false;
+  return !(Number(item.price) > 0);
+}
+
+export function isCylinderSaleLine(item: Pick<LineItem, "price" | "sellCylinder">, p?: Pick<Product, "uom" | "productType"> | null) {
+  if (p?.productType !== "cylinder") return false;
+  return Boolean(item.sellCylinder) || Number(item.price) > 0;
+}
+
+export function lineFromProduct(p: Product): LineItem {
+  const movementOnly = p.productType === "cylinder";
+  return {
+    productId: p.id,
+    productName: p.name,
+    quantity: 1,
+    price: movementOnly ? 0 : p.price,
+    taxRate: 0,
+    sellCylinder: false,
+  };
 }
 
 export const CYLINDER_SIZE_OPTIONS = [12, 35, 45] as const;

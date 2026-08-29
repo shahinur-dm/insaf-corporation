@@ -51,6 +51,7 @@ export const productSchema = z.object({
   code: z.string().min(1, "Code required"),
   name: z.string().min(2, "Name required"),
   category: z.enum(["LPG", "Industrial", "Medical", "Other"]),
+  productType: z.enum(["gas", "cylinder"]),
   uom: z.enum(["kg", "cyl", "ltr", "pcs"]),
   price: z.coerce.number().min(0),
   cost: z.coerce.number().min(0).optional(),
@@ -80,6 +81,7 @@ export const lineItemSchema = z.object({
   price: z.coerce.number().min(0),
   taxRate: z.coerce.number().min(0).optional(),
   cylinderIds: z.array(z.string()).optional(),
+  sellCylinder: z.boolean().optional(),
 });
 
 export const salesOrderSchema = z.object({

@@ -184,6 +184,13 @@ export const bn = {
   "customers.reminderDays": "রিমাইন্ডার দিন",
   "customers.reminderDaysUnit": "দিন",
   "customers.since": "গ্রাহক যেহেতু / খোলার তারিখ",
+  "customers.cylSent": "মোট পাঠানো",
+  "customers.cylReturned": "মোট ফেরত",
+  "customers.cylRemaining": "বর্তমান বাকি",
+  "customers.cylOverdue": "ওভারডিউ",
+  "customers.cylLost": "হারানো",
+  "customers.cylDamaged": "ক্ষতিগ্রস্ত",
+  "customers.cylHistory": "সিলিন্ডার মুভমেন্ট",
 
   // Suppliers
   "suppliers.title": "সরবরাহকারী",
@@ -246,6 +253,9 @@ export const bn = {
   "products.notFound": "পণ্য পাওয়া যায়নি।",
   "products.deleted": "পণ্য মুছে ফেলা হয়েছে",
   "products.code": "কোড",
+  "products.productType": "পণ্যের ধরন",
+  "products.type.gas": "গ্যাস",
+  "products.type.cylinder": "সিলিন্ডার",
   "products.uom": "একক",
   "products.stock": "স্টক",
   "products.reorder": "রিঅর্ডার",

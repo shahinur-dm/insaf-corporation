@@ -1,5 +1,5 @@
 import type { Cylinder, Delivery, Product, SalesOrder, StockMovement } from "@/types";
-import { cylinderIsEmpty, cylinderIsFullStock } from "@/lib/cylinder-product";
+import { cylinderIsEmpty, cylinderIsFullStock, isCylinderProduct } from "@/lib/cylinder-product";
 
 export type InventoryStockStatus = "normal" | "low" | "out";
 
@@ -73,7 +73,7 @@ export function buildProductInventory(
 ): ProductInventoryRow[] {
   return products.map((p, idx) => {
     const mine = cylinders.filter((c) => c.productId === p.id && c.status !== "damaged" && c.status !== "lost");
-    const isCyl = p.uom === "cyl" || mine.length > 0;
+    const isCyl = isCylinderProduct(p) || (p.productType !== "gas" && mine.length > 0);
     const reserved = reservedQtyForProduct(p.id, sales, deliveries, movements);
     let total: number;
     let full: number;

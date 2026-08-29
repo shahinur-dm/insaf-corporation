@@ -8,7 +8,7 @@ import type {
 } from "@/types";
 import { crudFn, dashboardFn, notificationsFn } from "@/lib/data.functions";
 import { genOrderNo } from "@/utils/helpers";
-import { cylinderIsEmpty, pickFifo, suggestSerials } from "@/lib/cylinder-product";
+import { cylinderIsEmpty, isCylinderProduct, isCylinderSaleLine, pickFifo, suggestSerials } from "@/lib/cylinder-product";
 
 const call = async <T,>(op: any, coll: any, id?: string, payload?: any): Promise<T> => {
   return (await crudFn({ data: { op, coll, id, payload } })) as T;
@@ -578,7 +578,7 @@ export const deliveryService = {
     const used = new Set<string>();
     for (const item of nextItems) {
       const p = products.find((x) => x.id === item.productId);
-      if (p?.uom !== "cyl") continue;
+      if (!isCylinderProduct(p)) continue;
       const ids = item.cylinderIds || [];
       if (ids.length !== item.quantity) {
         throw new Error(`Select ${item.quantity} cylinder(s) for ${item.productName}`);
@@ -615,6 +615,8 @@ export const deliveryService = {
     }
 
     for (const item of nextItems) {
+      const p = products.find((x) => x.id === item.productId);
+      const sold = isCylinderSaleLine(item, p);
       for (const cid of item.cylinderIds || []) {
         await cylinderService.addMovement({
           cylinderId: cid,
@@ -622,8 +624,11 @@ export const deliveryService = {
           customerId: delivery.customerId,
           fromLocation: "Warehouse",
           toLocation: delivery.customerName,
-          notes: `Auto-issued from Delivery ${delivery.challanNo}`,
+          notes: sold
+            ? `Sold — ownership transferred (${delivery.challanNo})`
+            : `Auto-issued from Delivery ${delivery.challanNo}`,
           by: "Delivery",
+          sold,
         });
       }
     }
@@ -774,7 +779,7 @@ export const purchaseService = {
     for (let i = 0; i < nextItems.length; i++) {
       const item = nextItems[i];
       const p = products.find((x) => x.id === item.productId);
-      if (p?.uom !== "cyl") continue;
+      if (!isCylinderProduct(p)) continue;
       const serials = (payload?.serialsByItem?.[i] || []).map((s) => s.trim()).filter(Boolean);
       if (serials.length === 0 && item.cylinderIds?.length === item.quantity) continue;
       if (serials.length !== item.quantity) {
@@ -917,7 +922,7 @@ export const inventoryService = {
     if (!Number.isFinite(quantity) || quantity < 0) throw new Error("Quantity cannot be negative");
     if (type !== "adjust" && quantity <= 0) throw new Error("Quantity must be positive");
     const cylinders = await call<Cylinder[]>("list", "cylinders");
-    const isCyl = product.uom === "cyl";
+    const isCyl = isCylinderProduct(product);
     const fullNow = cylinders.filter((c) => c.productId === productId && c.status !== "damaged" && c.status !== "lost" && !cylinderIsEmpty(c) && (c.status === "in_stock" || c.status === "in_transit")).length;
     const current = isCyl ? fullNow : (product.stock ?? 0);
     let delta = 0;

@@ -3,12 +3,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { FileText, Pencil, Trash2 } from "lucide-react";
 import { customerService } from "@/services/customer.service";
+import { cylinderService } from "@/services/cylinder.service";
+import { productService } from "@/services/product.service";
 import { PageHeader } from "@/components/common/PageHeader";
 import { DetailOrOutlet } from "@/components/common/DetailOrOutlet";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatCurrency, formatOpenedOn } from "@/utils/formatters";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import { formatCurrency, formatDate, formatOpenedOn } from "@/utils/formatters";
 import { customerOpeningSigned } from "@/lib/customer-balance";
+import { customerCylinderBalance, customerCylinderHistory } from "@/lib/customer-cylinders";
 import { useT } from "@/i18n";
 
 export const Route = createFileRoute("/customers/$id")({
@@ -32,6 +38,9 @@ function CustomerDetailBody() {
     queryKey: ["customers", id],
     queryFn: () => customerService.get(id),
   });
+  const { data: cylinders = [] } = useQuery({ queryKey: ["cylinders"], queryFn: cylinderService.list });
+  const { data: movements = [] } = useQuery({ queryKey: ["cylinderMovements"], queryFn: cylinderService.listMovements });
+  const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: productService.list });
 
   const remove = useMutation({
     mutationFn: () => customerService.remove(id),
@@ -46,6 +55,9 @@ function CustomerDetailBody() {
   if (isLoading) return <div className="p-6 text-sm text-muted-foreground">{t("common.loading")}</div>;
   if (isFetched && !c) return <div className="p-6 text-sm text-destructive">{t("customers.notFound")}</div>;
   if (!c) return null;
+
+  const cylBal = customerCylinderBalance(id, cylinders, movements);
+  const cylHist = customerCylinderHistory(id, cylinders, movements, products);
 
   return (
     <div>
@@ -95,7 +107,50 @@ function CustomerDetailBody() {
             : t("customers.reminderOff")}
         />
         <Info label={t("customers.since")} value={formatOpenedOn(c.createdAt)} />
+        <Info label={t("customers.cylSent")} value={String(cylBal.sent)} />
+        <Info label={t("customers.cylReturned")} value={String(cylBal.returned)} />
+        <Info label={t("customers.cylRemaining")} value={String(cylBal.remaining)} />
+        <Info label={t("customers.cylOverdue")} value={String(cylBal.overdue)} />
+        <Info label={t("customers.cylLost")} value={String(cylBal.lost)} />
+        <Info label={t("customers.cylDamaged")} value={String(cylBal.damaged)} />
       </CardContent></Card>
+
+      <Card className="mt-4">
+        <CardContent className="pt-6">
+          <p className="mb-3 text-xs uppercase text-muted-foreground">{t("customers.cylHistory")}</p>
+          {cylHist.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{t("common.noItems")}</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t("common.date")}</TableHead>
+                    <TableHead>{t("common.product")}</TableHead>
+                    <TableHead className="text-right">{t("customers.cylSent")}</TableHead>
+                    <TableHead className="text-right">{t("customers.cylReturned")}</TableHead>
+                    <TableHead className="text-right">{t("customers.cylRemaining")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {cylHist.map((row) => (
+                    <TableRow key={row.id}>
+                      <TableCell className="text-muted-foreground">{formatDate(row.date)}</TableCell>
+                      <TableCell>
+                        {row.productName}
+                        {row.serial ? <span className="ml-1 font-mono text-xs text-muted-foreground">{row.serial}</span> : null}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{row.sent || "—"}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.returned || "—"}</TableCell>
+                      <TableCell className="text-right tabular-nums font-medium">{row.remaining}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

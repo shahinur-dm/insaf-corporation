@@ -4,6 +4,8 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { salesService } from "@/services/sales.service";
 import { customerService } from "@/services/customer.service";
+import { productService } from "@/services/product.service";
+import { isCylinderMovementOnly } from "@/lib/cylinder-product";
 import { accountingService } from "@/services/accounting.service";
 import { formatCurrency, formatDate } from "@/utils/formatters";
 import { lineAmount, paymentStatus } from "@/utils/helpers";
@@ -44,6 +46,7 @@ export function InvoiceView({ id }: { id: string }) {
     queryFn: () => customerService.get(order!.customerId),
     enabled: !!order?.customerId,
   });
+  const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: productService.list });
   const { data: accounts = [] } = useQuery({ queryKey: ["accounts"], queryFn: accountingService.listAccounts });
   const { data: vouchers = [] } = useQuery({ queryKey: ["vouchers"], queryFn: accountingService.listVouchers });
   const [amount, setAmount] = useState<string>("");
@@ -224,7 +227,9 @@ export function InvoiceView({ id }: { id: string }) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {order.items.map((it, i) => (
+                  {order.items
+                    .filter((it) => !isCylinderMovementOnly(it, products.find((p) => p.id === it.productId)))
+                    .map((it, i) => (
                     <TableRow key={i}>
                       <TableCell className="text-muted-foreground">{i + 1}</TableCell>
                       <TableCell>{it.productName}</TableCell>

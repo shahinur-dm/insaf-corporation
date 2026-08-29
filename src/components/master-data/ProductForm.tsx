@@ -54,6 +54,7 @@ export function ProductForm({ id }: { id?: string }) {
           code: existing.code,
           name: existing.name,
           category: existing.category,
+          productType: existing.productType ?? (existing.uom === "cyl" ? "cylinder" : "gas"),
           uom: existing.uom,
           price: existing.price,
           cost: existing.cost ?? 0,
@@ -67,6 +68,7 @@ export function ProductForm({ id }: { id?: string }) {
       : undefined,
     defaultValues: {
       category: "LPG",
+      productType: "gas",
       uom: "cyl",
       price: 0,
       cost: 0,
@@ -166,6 +168,15 @@ export function ProductForm({ id }: { id?: string }) {
                 {["LPG", "Industrial", "Medical", "Other"].map((c) => (
                   <SelectItem key={c} value={c}>{c}</SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+          </Row>
+          <Row label={t("products.productType")}>
+            <Select value={watch("productType")} onValueChange={(v) => setValue("productType", v as FormValues["productType"])}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="gas">{t("products.type.gas")}</SelectItem>
+                <SelectItem value="cylinder">{t("products.type.cylinder")}</SelectItem>
               </SelectContent>
             </Select>
           </Row>

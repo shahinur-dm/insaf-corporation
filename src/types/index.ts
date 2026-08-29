@@ -32,12 +32,15 @@ export interface Supplier {
 export type ProductCategory = "LPG" | "Industrial" | "Medical" | "Other";
 export type UnitOfMeasure = "kg" | "cyl" | "ltr" | "pcs";
 export type CostingMethod = "fifo" | "lifo" | "average";
+export type ProductType = "gas" | "cylinder";
 
 export interface Product {
   id: ID;
   code: string;
   name: string;
   category: ProductCategory;
+  /** Gas = invoice/revenue. Cylinder = movement unless a sale price is entered. */
+  productType?: ProductType;
   uom: UnitOfMeasure;
   price: number;
   cost?: number;
@@ -108,6 +111,8 @@ export interface CylinderMovement {
   notes?: string;
   timestamp: string;
   by: string;
+  /** True when the cylinder was sold (ownership transfer), not loaned. */
+  sold?: boolean;
 }
 
 export interface LineItem {
@@ -117,6 +122,8 @@ export interface LineItem {
   price: number;
   taxRate?: number;
   cylinderIds?: string[];
+  /** Cylinder line billed as an ownership sale (not movement-only). */
+  sellCylinder?: boolean;
 }
 
 export type SalesStatus = "draft" | "confirmed" | "invoiced" | "paid" | "cancelled";

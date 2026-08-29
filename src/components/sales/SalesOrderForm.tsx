@@ -28,6 +28,7 @@ import { cylinderService } from "@/services/cylinder.service";
 import { deliveryService } from "@/services/delivery.service";
 import { inventoryService } from "@/services/inventory.service";
 import { buildProductInventory } from "@/lib/cylinder-inventory";
+import { isCylinderMovementOnly, isCylinderSaleLine, lineFromProduct } from "@/lib/cylinder-product";
 
 export function SalesOrderForm({
   mode = "order",
@@ -75,15 +76,18 @@ export function SalesOrderForm({
 
   useEffect(() => {
     if (editing || items.length > 0 || !products[0]) return;
-    const p = products[0];
-    setItems([{ productId: p.id, productName: p.name, quantity: 1, price: p.price, taxRate: 0 }]);
+    setItems([lineFromProduct(products[0])]);
   }, [editing, items.length, products]);
 
   const update = (idx: number, patch: Partial<LineItem>) => {
     setItems(items.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
   };
 
-  const totals = computeTotals(items);
+  const billedItems = items.map((it) => {
+    const p = products.find((x) => x.id === it.productId);
+    return isCylinderMovementOnly(it, p) ? { ...it, price: 0 } : it;
+  });
+  const totals = computeTotals(billedItems);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -104,7 +108,16 @@ export function SalesOrderForm({
         if (existing.status === "cancelled") {
           throw new Error(t("sales.cannotEdit"));
         }
-        const nextItems = items.map((it) => ({ ...it, taxRate: 0 }));
+        const nextItems = items.map((it) => {
+          const p = products.find((x) => x.id === it.productId);
+          const movementOnly = isCylinderMovementOnly(it, p);
+          return {
+            ...it,
+            taxRate: 0,
+            price: movementOnly ? 0 : it.price,
+            sellCylinder: isCylinderSaleLine(it, p),
+          };
+        });
         return salesService.update(id!, {
           customerId,
           customerName: customer.name,
@@ -122,7 +135,16 @@ export function SalesOrderForm({
         orderNo: genOrderNo(mode === "quotation" ? "QT" : "SO"),
         customerId, customerName: customer.name,
         date: new Date().toISOString(),
-        items: items.map((it) => ({ ...it, taxRate: 0 })),
+        items: items.map((it) => {
+          const p = products.find((x) => x.id === it.productId);
+          const movementOnly = isCylinderMovementOnly(it, p);
+          return {
+            ...it,
+            taxRate: 0,
+            price: movementOnly ? 0 : it.price,
+            sellCylinder: isCylinderSaleLine(it, p),
+          };
+        }),
         subtotal: totals.subtotal, tax: 0, total: totals.total,
         paid: 0, status: mode === "quotation" ? "draft" : "confirmed", notes,
         driverName: driverName || undefined,
@@ -218,7 +240,7 @@ export function SalesOrderForm({
                     <TableCell>
                       <Select value={it.productId || undefined} onValueChange={(v) => {
                         const p = products.find((x) => x.id === v);
-                        if (p) update(idx, { productId: p.id, productName: p.name, price: p.price, taxRate: 0 });
+                        if (p) update(idx, { ...lineFromProduct(p), quantity: it.quantity });
                       }}>
                         <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
                         <SelectContent className="max-h-72">
@@ -246,7 +268,7 @@ export function SalesOrderForm({
                       })()}
                     </TableCell>
                     <TableCell><Input type="number" step="0.01" value={it.price} onChange={(e) => update(idx, { price: Number(e.target.value) })} className="text-right" /></TableCell>
-                    <TableCell className="text-right font-medium">{formatCurrency(lineAmount(it))}</TableCell>
+                    <TableCell className="text-right font-medium">{formatCurrency(lineAmount(billedItems[idx] ?? it))}</TableCell>
                     <TableCell><Button size="icon" variant="ghost" onClick={() => setItems(items.filter((_, i) => i !== idx))}><Trash2 className="h-4 w-4" /></Button></TableCell>
                   </TableRow>
                 ))}
