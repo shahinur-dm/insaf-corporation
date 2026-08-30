@@ -3,6 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { cylinderService } from "@/services/cylinder.service";
 import { productService } from "@/services/product.service";
 import { isCylinderProduct, pickFifo, cylinderIsEmpty } from "@/lib/cylinder-product";
+import { getCylinderTrackingFn } from "@/lib/settings.functions";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import type { Delivery } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -19,14 +22,16 @@ export function DeliveryCylinderDialog({
   delivery: Delivery;
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  onConfirm: (payload: { issuedIdsByItem: string[][]; returnedIds: string[] }) => void;
+  onConfirm: (payload: { issuedIdsByItem: string[][]; returnedIds: string[]; lotNumber?: string }) => void;
   pending?: boolean;
 }) {
   const t = useT();
   const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: productService.list });
   const { data: cylinders = [] } = useQuery({ queryKey: ["cylinders"], queryFn: cylinderService.list });
+  const { data: tracking = "serial" } = useQuery({ queryKey: ["cylinderTracking"], queryFn: () => getCylinderTrackingFn() });
   const [issued, setIssued] = useState<string[][]>([]);
   const [returned, setReturned] = useState<string[]>([]);
+  const [lotNumber, setLotNumber] = useState("");
 
   const cylLines = useMemo(
     () => delivery.items.map((it, index) => ({ it, index, product: products.find((p) => p.id === it.productId) }))
@@ -44,7 +49,7 @@ export function DeliveryCylinderDialog({
   const empties = cylinders.filter(
     (c) => c.status === "at_customer" && (!c.customerId || c.customerId === delivery.customerId),
   );
-  const ready = cylLines.every(({ it, index }) => (issued[index]?.length || 0) === it.quantity);
+  const ready = tracking !== "serial" || cylLines.every(({ it, index }) => (issued[index]?.length || 0) === it.quantity);
 
   const toggle = (index: number, id: string, qty: number) => {
     setIssued((prev) => {
@@ -63,6 +68,12 @@ export function DeliveryCylinderDialog({
           <DialogTitle>{t("deliveries.assignTitle")}</DialogTitle>
         </DialogHeader>
         <div className="space-y-5">
+          {tracking === "lot" && (
+            <div className="space-y-1.5">
+              <Label>{t("inventory.lotNumber")}</Label>
+              <Input value={lotNumber} onChange={(e) => setLotNumber(e.target.value)} placeholder="LOT-2026-001" />
+            </div>
+          )}
           {cylLines.map(({ it, index, product }) => {
             const stock = cylinders.filter(
               (c) => c.productId === it.productId
@@ -143,7 +154,7 @@ export function DeliveryCylinderDialog({
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button>
-          <Button disabled={!ready || pending} onClick={() => onConfirm({ issuedIdsByItem: issued, returnedIds: returned })}>
+          <Button disabled={!ready || pending || (tracking === "lot" && !lotNumber.trim())} onClick={() => onConfirm({ issuedIdsByItem: issued, returnedIds: returned, lotNumber: lotNumber || undefined })}>
             {t("deliveries.confirm")}
           </Button>
         </DialogFooter>

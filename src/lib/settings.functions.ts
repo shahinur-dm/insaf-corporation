@@ -2,6 +2,25 @@ import { createServerFn } from "@tanstack/react-start";
 import type { PowerMatrix } from "./settings-store";
 
 export type { PowerMatrix };
+export type CylinderTrackingMethod = "quantity" | "lot" | "serial";
+
+export const getCylinderTrackingFn = createServerFn({ method: "POST" }).handler(async (): Promise<CylinderTrackingMethod> => {
+  const { requireUser } = await import("./session.server");
+  const { getCylinderTracking } = await import("./settings.server");
+  await requireUser();
+  return getCylinderTracking();
+});
+
+export const saveCylinderTrackingFn = createServerFn({ method: "POST" })
+  .inputValidator((d: { method: CylinderTrackingMethod }) => d)
+  .handler(async ({ data }): Promise<CylinderTrackingMethod> => {
+    const { requireUser } = await import("./session.server");
+    const { saveCylinderTracking, roleCanAccess } = await import("./settings.server");
+    const user = await requireUser();
+    const allowed = user.role === "Administrator" || (await roleCanAccess(user.role, "settings"));
+    if (!allowed) throw new Error("Not allowed to update settings");
+    return saveCylinderTracking(data.method);
+  });
 
 export const getPowerMatrixFn = createServerFn({ method: "POST" }).handler(async (): Promise<PowerMatrix> => {
   const { requireUser } = await import("./session.server");

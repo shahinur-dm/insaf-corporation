@@ -16,6 +16,10 @@ import {
 import { useT } from "@/i18n";
 import { EMPTY_DATE_RANGE, filterByDateRange, type DateRange } from "@/lib/date-range";
 import { companyOwnedLocations, cylinderOverviewCounts } from "@/lib/cylinder-product";
+import { buildCylinderOverdueRows } from "@/lib/cylinder-reports";
+import { customerService } from "@/services/customer.service";
+import { supplierService } from "@/services/supplier.service";
+import { productService } from "@/services/product.service";
 
 export function Dashboard() {
   const t = useT();
@@ -51,6 +55,10 @@ export function Dashboard() {
     refetchOnMount: "always",
     staleTime: 0,
   });
+  const { data: cylMoves = [] } = useQuery({ queryKey: ["cylinderMovements"], queryFn: cylinderService.listMovements });
+  const { data: customers = [] } = useQuery({ queryKey: ["customers"], queryFn: customerService.list });
+  const { data: suppliers = [] } = useQuery({ queryKey: ["suppliers"], queryFn: supplierService.list });
+  const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: productService.list });
 
   const s = data ?? {
     todaySales: 0, todayCollection: 0, todayExpense: 0,
@@ -75,6 +83,12 @@ export function Dashboard() {
 
   const cylCounts = useMemo(() => cylinderOverviewCounts(cylinders), [cylinders]);
   const owned = useMemo(() => companyOwnedLocations(cylinders), [cylinders]);
+  const overdue = useMemo(
+    () => buildCylinderOverdueRows({ cylinders, movements: cylMoves, products, customers, suppliers }),
+    [cylinders, cylMoves, products, customers, suppliers],
+  );
+  const customerOverdue = overdue.filter((r) => r.partyKind === "customer").reduce((a, r) => a + r.quantity, 0);
+  const supplierOverdue = overdue.filter((r) => r.partyKind === "supplier").reduce((a, r) => a + r.quantity, 0);
 
   const greetingName = user?.displayName || "Operator";
 
@@ -186,6 +200,21 @@ export function Dashboard() {
         </div>
         <div data-reveal>
           <StatCard title={t("dash.cylDamaged")} value={String(owned.damaged)} icon={AlertTriangle} tone="warning" to="/inventory" />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <div data-reveal>
+          <StatCard title={t("dash.cylInRefill")} value={String(owned.inRefill)} icon={AlertTriangle} tone="warning" to="/inventory" />
+        </div>
+        <div data-reveal>
+          <StatCard title={t("dash.cylEmptyWh")} value={String(cylCounts.empty)} icon={Package} tone="info" to="/inventory" />
+        </div>
+        <div data-reveal>
+          <StatCard title={t("dash.cylOverdueCust")} value={String(customerOverdue)} icon={Users} tone="danger" to="/reports" />
+        </div>
+        <div data-reveal>
+          <StatCard title={t("dash.cylOverdueSupp")} value={String(supplierOverdue)} icon={Truck} tone="danger" to="/reports" />
         </div>
       </div>
 

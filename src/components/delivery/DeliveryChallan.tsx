@@ -10,6 +10,7 @@ import { cylinderService } from "@/services/cylinder.service";
 import { customerService } from "@/services/customer.service";
 import { hrService } from "@/services/hr.service";
 import { isCylinderProduct } from "@/lib/cylinder-product";
+import { getCylinderTrackingFn } from "@/lib/settings.functions";
 import { isDeliveryStaff } from "@/lib/hr-staff";
 import { DeliveryCylinderDialog } from "@/components/delivery/DeliveryCylinderDialog";
 import { Card, CardContent } from "@/components/ui/card";
@@ -51,9 +52,10 @@ export function DeliveryChallan({ id }: { id: string }) {
     enabled: !!d?.salesOrderId,
   });
   const { data: employees = [] } = useQuery({ queryKey: ["employees"], queryFn: hrService.listEmployees });
+  const { data: tracking = "serial" } = useQuery({ queryKey: ["cylinderTracking"], queryFn: () => getCylinderTrackingFn() });
 
   const confirm = useMutation({
-    mutationFn: (payload?: { issuedIdsByItem?: string[][]; returnedIds?: string[] }) =>
+    mutationFn: (payload?: { issuedIdsByItem?: string[][]; returnedIds?: string[]; lotNumber?: string }) =>
       deliveryService.confirm(id, payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["deliveries"] });
@@ -96,7 +98,8 @@ export function DeliveryChallan({ id }: { id: string }) {
   const canConfirm = d && (d.status === "pending" || d.status === "in_transit");
   const canDelete = d?.status === "pending";
   const startConfirm = () => {
-    if (needsCylinders) setAssignOpen(true);
+    if (needsCylinders && tracking === "serial") setAssignOpen(true);
+    else if (needsCylinders && tracking === "lot") setAssignOpen(true);
     else confirm.mutate(undefined);
   };
   const serialsOf = (ids?: string[]) =>

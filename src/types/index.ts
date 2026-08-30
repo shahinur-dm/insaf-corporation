@@ -90,6 +90,7 @@ export interface Cylinder {
   fillLevel?: CylinderFillLevel;
   /** Company-owned unless sold to the customer. */
   ownedBy?: "company" | "customer";
+  lotNumber?: string;
   lastMovementAt: string;
   createdAt: string;
 }
@@ -135,6 +136,7 @@ export interface CylinderMovement {
   reason?: string;
   penaltyAmount?: number;
   accountingTreatment?: "charge" | "writeoff" | "none";
+  lotNumber?: string;
 }
 
 export interface LineItem {

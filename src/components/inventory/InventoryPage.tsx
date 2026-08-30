@@ -10,6 +10,7 @@ import { salesService } from "@/services/sales.service";
 import { deliveryService } from "@/services/delivery.service";
 import { supplierService } from "@/services/supplier.service";
 import { customerService } from "@/services/customer.service";
+import { getCylinderTrackingFn } from "@/lib/settings.functions";
 import { PageHeader } from "@/components/common/PageHeader";
 import { DataTable } from "@/components/common/DataTable";
 import { StatCard } from "@/components/dashboard/widgets/StatCard";
@@ -73,6 +74,7 @@ export function InventoryPage() {
   const { data: deliveries = [] } = useQuery({ queryKey: ["deliveries"], queryFn: deliveryService.list });
   const { data: suppliers = [] } = useQuery({ queryKey: ["suppliers"], queryFn: supplierService.list });
   const { data: customers = [] } = useQuery({ queryKey: ["customers"], queryFn: customerService.list });
+  const { data: tracking = "serial" } = useQuery({ queryKey: ["cylinderTracking"], queryFn: () => getCylinderTrackingFn() });
 
   const rows = useMemo(
     () => buildProductInventory(products, cylinders, sales, deliveries, movements),
@@ -87,8 +89,8 @@ export function InventoryPage() {
   const [productId, setProductId] = useState("");
   const [qty, setQty] = useState("1");
   const [type, setType] = useState<
-    "in" | "out" | "adjust" | "refill" | "send_supplier" | "receive_supplier"
-    | "return_empty" | "loan" | "mark_lost" | "mark_damaged" | "repair" | "scrap" | "writeoff" | "sell_cylinder"
+    "in" | "out" | "adjust" | "refill" | "customer_sent" | "return_empty" | "send_supplier" | "receive_supplier"
+    | "loan" | "mark_lost" | "mark_damaged" | "repair" | "scrap" | "sell_cylinder"
   >("in");
   const [notes, setNotes] = useState("");
   const [supplierId, setSupplierId] = useState("");
@@ -100,6 +102,7 @@ export function InventoryPage() {
   const [reason, setReason] = useState("");
   const [penalty, setPenalty] = useState("0");
   const [treatment, setTreatment] = useState<"charge" | "writeoff" | "none">("none");
+  const [lotNumber, setLotNumber] = useState("");
   const [focus, setFocus] = useState<"all" | "full" | "empty" | "refill" | "reserved" | "available">("all");
 
   const filteredRows = useMemo(() => {
@@ -132,6 +135,9 @@ export function InventoryPage() {
         return inventoryService.receiveFromSupplier({
           supplierId, productId, quantity: Number(qty), condition, notes,
         });
+      }
+      if (type === "customer_sent") {
+        return inventoryService.sendToCustomer({ customerId, productId, quantity: Number(qty), lotNumber: lotNumber || undefined, notes });
       }
       if (type === "return_empty") return inventoryService.returnEmpty({ customerId, productId, quantity: Number(qty), notes });
       if (type === "loan") {
@@ -242,16 +248,16 @@ export function InventoryPage() {
                   <SelectItem value="out">{t("inventory.stockOut")}</SelectItem>
                   <SelectItem value="adjust">{t("inventory.setAbsolute")}</SelectItem>
                   <SelectItem value="refill">{t("inventory.refillComplete")}</SelectItem>
-                  <SelectItem value="send_supplier">{t("inventory.sendSupplier")}</SelectItem>
-                  <SelectItem value="receive_supplier">{t("inventory.receiveSupplier")}</SelectItem>
-                  <SelectItem value="return_empty">{t("inventory.returnEmpty")}</SelectItem>
+                  <SelectItem value="customer_sent">{t("inventory.customerSent")}</SelectItem>
+                  <SelectItem value="return_empty">{t("inventory.customerReturned")}</SelectItem>
+                  <SelectItem value="send_supplier">{t("inventory.supplierSent")}</SelectItem>
+                  <SelectItem value="receive_supplier">{t("inventory.supplierReturned")}</SelectItem>
                   <SelectItem value="loan">{t("inventory.loan")}</SelectItem>
                   <SelectItem value="sell_cylinder">{t("inventory.sellCylinder")}</SelectItem>
                   <SelectItem value="mark_lost">{t("inventory.markLost")}</SelectItem>
                   <SelectItem value="mark_damaged">{t("inventory.markDamaged")}</SelectItem>
                   <SelectItem value="repair">{t("inventory.repair")}</SelectItem>
                   <SelectItem value="scrap">{t("inventory.scrap")}</SelectItem>
-                  <SelectItem value="writeoff">{t("inventory.writeoff")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -280,7 +286,7 @@ export function InventoryPage() {
                 </Select>
               </div>
             )}
-            {(type === "return_empty" || type === "loan" || type === "sell_cylinder" || (type === "mark_lost" && partyKind === "customer")) && (
+            {(type === "return_empty" || type === "loan" || type === "sell_cylinder" || type === "customer_sent" || (type === "mark_lost" && partyKind === "customer")) && (
               <div className="space-y-1.5">
                 <Label>{t("common.customer")}</Label>
                 <Select value={customerId || undefined} onValueChange={setCustomerId}>
@@ -330,6 +336,12 @@ export function InventoryPage() {
                 </div>
               </>
             )}
+            {tracking === "lot" && (type === "customer_sent" || type === "send_supplier" || type === "loan" || type === "sell_cylinder") && (
+              <div className="space-y-1.5">
+                <Label>{t("inventory.lotNumber")}</Label>
+                <Input value={lotNumber} onChange={(e) => setLotNumber(e.target.value)} placeholder="LOT-2026-001" />
+              </div>
+            )}
             {type === "receive_supplier" && (
               <div className="space-y-1.5">
                 <Label>{t("inventory.condition")}</Label>
@@ -351,7 +363,7 @@ export function InventoryPage() {
               <Label>{type === "refill" ? t("inventory.receivedBy") : t("common.notes")}</Label>
               <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
             </div>
-            <Button className="w-full" disabled={!productId || adjust.isPending || Number(qty) < 0 || ((type === "send_supplier" || type === "receive_supplier" || (type === "mark_lost" && partyKind === "supplier")) && !supplierId) || ((type === "return_empty" || type === "loan" || type === "sell_cylinder" || (type === "mark_lost" && partyKind === "customer")) && !customerId)} onClick={() => { if (adjust.isPending) return; adjust.mutate(); }}>
+            <Button className="w-full" disabled={!productId || adjust.isPending || Number(qty) < 0 || ((type === "send_supplier" || type === "receive_supplier" || (type === "mark_lost" && partyKind === "supplier")) && !supplierId) || ((type === "return_empty" || type === "loan" || type === "sell_cylinder" || type === "customer_sent" || (type === "mark_lost" && partyKind === "customer")) && !customerId)} onClick={() => { if (adjust.isPending) return; adjust.mutate(); }}>
               {t("inventory.apply")}
             </Button>
           </CardContent>

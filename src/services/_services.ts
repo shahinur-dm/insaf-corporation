@@ -14,6 +14,49 @@ const call = async <T,>(op: any, coll: any, id?: string, payload?: any): Promise
   return (await crudFn({ data: { op, coll, id, payload } })) as T;
 };
 
+async function takeWarehouseFull(productId: string, qty: number, lotNumber?: string) {
+  const { getCylinderTracking } = await import("@/lib/settings.server");
+  const method = await getCylinderTracking();
+  const product = await call<Product | null>("get", "products", productId);
+  if (!product) throw new Error("Product not found");
+  if (method === "lot" && !lotNumber?.trim()) throw new Error("Lot number required");
+  let pool = (await call<Cylinder[]>("list", "cylinders"))
+    .filter((c) =>
+      c.productId === productId
+      && cylinderIsFullStock(c)
+      && c.ownedBy !== "customer"
+      && (!lotNumber || c.lotNumber === lotNumber),
+    )
+    .sort((a, b) => a.lastMovementAt.localeCompare(b.lastMovementAt));
+  if (pool.length < qty && method !== "serial") {
+    const need = qty - pool.length;
+    const stamp = Date.now().toString(36);
+    for (let i = 0; i < need; i += 1) {
+      const serial = lotNumber
+        ? `${lotNumber}-${stamp}-${String(i + 1).padStart(3, "0")}`
+        : `QTY-${(product.code || "CYL").replace(/\s+/g, "")}-${stamp}-${i + 1}`;
+      const now = new Date().toISOString();
+      const created = await call<Cylinder>("create", "cylinders", undefined, {
+        serialNumber: serial,
+        productId,
+        capacity: 0,
+        status: "in_stock",
+        location: "Warehouse",
+        fillLevel: "full",
+        lotNumber: lotNumber || undefined,
+        ownedBy: "company",
+        createdAt: now,
+        lastMovementAt: now,
+      });
+      pool.push(created);
+    }
+  }
+  if (pool.length < qty) {
+    throw new Error(`Only ${pool.length} full company-owned cylinder(s) available for ${product.name}`);
+  }
+  return pool.slice(0, qty);
+}
+
 type StockMeta = { refType?: StockMovement["refType"]; refId?: string; notes?: string; by?: string };
 
 async function postStockMovement(data: Omit<StockMovement, "id">) {
@@ -573,7 +616,7 @@ export const deliveryService = {
     if (existing.status !== "pending") throw new Error("Only pending deliveries can be deleted");
     return call<{ ok: true }>("remove", "deliveries", id);
   },
-  confirm: async (id: string, payload?: { issuedIdsByItem?: string[][]; returnedIds?: string[] }) => {
+  confirm: async (id: string, payload?: { issuedIdsByItem?: string[][]; returnedIds?: string[]; lotNumber?: string }) => {
     const delivery = await call<Delivery | null>("get", "deliveries", id);
     if (!delivery) throw new Error("Delivery not found");
     if (delivery.status !== "pending" && delivery.status !== "in_transit") {
@@ -588,12 +631,15 @@ export const deliveryService = {
     });
 
     const used = new Set<string>();
-    for (const item of nextItems) {
+    for (let i = 0; i < nextItems.length; i += 1) {
+      const item = nextItems[i];
       const p = products.find((x) => x.id === item.productId);
       if (!isCylinderProduct(p)) continue;
-      const ids = item.cylinderIds || [];
+      let ids = item.cylinderIds || [];
       if (ids.length !== item.quantity) {
-        throw new Error(`Select ${item.quantity} cylinder(s) for ${item.productName}`);
+        const picked = await takeWarehouseFull(item.productId, item.quantity, payload?.lotNumber);
+        ids = picked.map((c) => c.id);
+        nextItems[i] = { ...item, cylinderIds: ids };
       }
       for (const cid of ids) {
         if (used.has(cid)) throw new Error("Duplicate cylinder selected");
@@ -1186,11 +1232,7 @@ export const inventoryService = {
     if (!customer) throw new Error("Customer not found");
     const qty = Number(data.quantity);
     if (qty <= 0) throw new Error("Quantity must be positive");
-    const cylinders = await call<Cylinder[]>("list", "cylinders");
-    const pool = cylinders
-      .filter((c) => c.productId === data.productId && cylinderIsFullStock(c) && c.ownedBy !== "customer")
-      .sort((a, b) => a.lastMovementAt.localeCompare(b.lastMovementAt));
-    if (pool.length < qty) throw new Error(`Only ${pool.length} full cylinder(s) available to loan`);
+    const pool = await takeWarehouseFull(data.productId, qty);
     for (const c of pool.slice(0, qty)) {
       await cylinderService.addMovement({
         cylinderId: c.id,
@@ -1205,6 +1247,28 @@ export const inventoryService = {
       });
     }
   },
+  sendToCustomer: async (data: { customerId: string; productId: string; quantity: number; lotNumber?: string; notes?: string }) => {
+    const product = await call<Product | null>("get", "products", data.productId);
+    if (!product) throw new Error("Product not found");
+    const customer = await call<Customer | null>("get", "customers", data.customerId);
+    if (!customer) throw new Error("Customer not found");
+    const qty = Number(data.quantity);
+    if (qty <= 0) throw new Error("Quantity must be positive");
+    const pool = await takeWarehouseFull(data.productId, qty, data.lotNumber);
+    for (const c of pool) {
+      await cylinderService.addMovement({
+        cylinderId: c.id,
+        type: "issued",
+        customerId: customer.id,
+        fromLocation: "Warehouse",
+        toLocation: customer.name,
+        notes: data.notes?.trim() || `Customer sent · ${product.name}`,
+        by: "Warehouse",
+        purpose: "sent",
+        lotNumber: data.lotNumber,
+      });
+    }
+  },
   sellCylinders: async (data: { customerId: string; productId: string; quantity: number; notes?: string }) => {
     const product = await call<Product | null>("get", "products", data.productId);
     if (!product) throw new Error("Product not found");
@@ -1212,11 +1276,7 @@ export const inventoryService = {
     if (!customer) throw new Error("Customer not found");
     const qty = Number(data.quantity);
     if (qty <= 0) throw new Error("Quantity must be positive");
-    const cylinders = await call<Cylinder[]>("list", "cylinders");
-    const pool = cylinders
-      .filter((c) => c.productId === data.productId && cylinderIsFullStock(c) && c.ownedBy !== "customer")
-      .sort((a, b) => a.lastMovementAt.localeCompare(b.lastMovementAt));
-    if (pool.length < qty) throw new Error(`Only ${pool.length} company-owned cylinder(s) available to sell`);
+    const pool = await takeWarehouseFull(data.productId, qty);
     for (const c of pool.slice(0, qty)) {
       await cylinderService.addMovement({
         cylinderId: c.id,

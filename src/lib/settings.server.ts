@@ -64,6 +64,30 @@ export async function savePowerMatrixDoc(matrix: PowerMatrix): Promise<PowerMatr
   return sanitized;
 }
 
+export type CylinderTrackingMethod = "quantity" | "lot" | "serial";
+const TRACK_ID = "cylinder-tracking";
+
+export async function getCylinderTracking(): Promise<CylinderTrackingMethod> {
+  try {
+    const coll = await ensureSettingsColl();
+    const doc = await coll.findOne({ id: TRACK_ID });
+    const method = doc?.method;
+    if (method === "quantity" || method === "lot" || method === "serial") return method;
+  } catch {}
+  return "serial";
+}
+
+export async function saveCylinderTracking(method: CylinderTrackingMethod): Promise<CylinderTrackingMethod> {
+  const next = method === "quantity" || method === "lot" || method === "serial" ? method : "serial";
+  const coll = await ensureSettingsColl();
+  await coll.updateOne(
+    { id: TRACK_ID },
+    { $set: { id: TRACK_ID, method: next, updatedAt: new Date().toISOString() } },
+    { upsert: true },
+  );
+  return next;
+}
+
 export async function roleCanAccess(role: string | undefined, moduleId: AppModule): Promise<boolean> {
   if (!role) return false;
   if (role === "Administrator") return true;

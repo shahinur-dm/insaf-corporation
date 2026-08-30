@@ -23,7 +23,8 @@ import {
   type AppModule, type AppRole,
 } from "@/lib/settings-store";
 import {
-  resetPowerMatrixFn, savePowerMatrixFn, type PowerMatrix,
+  getCylinderTrackingFn, resetPowerMatrixFn, saveCylinderTrackingFn, savePowerMatrixFn,
+  type CylinderTrackingMethod, type PowerMatrix,
 } from "@/lib/settings.functions";
 import { usePowerMatrix } from "@/hooks/useModuleAccess";
 import {
@@ -45,6 +46,18 @@ export function SettingsPage() {
     queryFn: () => listAppUsersFn(),
   });
   const { data: serverMatrix, isLoading: matrixLoading } = usePowerMatrix();
+  const { data: tracking = "serial" } = useQuery({
+    queryKey: ["cylinderTracking"],
+    queryFn: () => getCylinderTrackingFn(),
+  });
+  const saveTracking = useMutation({
+    mutationFn: (method: CylinderTrackingMethod) => saveCylinderTrackingFn({ data: { method } }),
+    onSuccess: (method) => {
+      qc.setQueryData(["cylinderTracking"], method);
+      toast.success(t("settings.saved"));
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
   const [matrix, setMatrix] = useState<PowerMatrix>(() => defaultMatrix());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [username, setUsername] = useState("");
@@ -242,6 +255,26 @@ export function SettingsPage() {
                   {t("settings.reset")}
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="space-y-3 pt-6">
+              <div>
+                <h3 className="font-display text-base font-semibold">{t("settings.cylTracking")}</h3>
+                <p className="mt-1 text-sm text-muted-foreground">{t("settings.cylTrackingHint")}</p>
+              </div>
+              <Select
+                value={tracking}
+                onValueChange={(v) => saveTracking.mutate(v as CylinderTrackingMethod)}
+              >
+                <SelectTrigger className="max-w-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="quantity">{t("settings.track.quantity")}</SelectItem>
+                  <SelectItem value="lot">{t("settings.track.lot")}</SelectItem>
+                  <SelectItem value="serial">{t("settings.track.serial")}</SelectItem>
+                </SelectContent>
+              </Select>
             </CardContent>
           </Card>
         </TabsContent>
