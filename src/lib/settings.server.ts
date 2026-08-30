@@ -2,7 +2,7 @@ import { getDb } from "./mongo.server";
 import {
   APP_MODULES,
   APP_ROLES,
-  defaultMatrix,
+  closedMatrix,
   type AppModule,
   type AppRole,
   type PowerMatrix,
@@ -13,15 +13,14 @@ export type { PowerMatrix };
 const DOC_ID = "power-matrix";
 
 function sanitizeMatrix(raw: unknown): PowerMatrix {
-  const base = defaultMatrix();
+  const base = closedMatrix();
   if (!raw || typeof raw !== "object") return base;
   const input = raw as Record<string, Record<string, boolean>>;
   for (const role of APP_ROLES) {
-    const row = input[role] ?? base[role];
+    const row = input[role];
     base[role] = Object.fromEntries(
       APP_MODULES.map((m) => [m.id, Boolean(row?.[m.id])]),
     ) as Record<AppModule, boolean>;
-    // Administrator always has full access
     if (role === "Administrator") {
       base[role] = Object.fromEntries(APP_MODULES.map((m) => [m.id, true])) as Record<AppModule, boolean>;
     }
@@ -39,7 +38,7 @@ async function ensureSettingsColl() {
 export async function getPowerMatrix(): Promise<PowerMatrix> {
   const coll = await ensureSettingsColl();
   const doc = await coll.findOne({ id: DOC_ID });
-  if (!doc?.matrix) return defaultMatrix();
+  if (!doc?.matrix) return closedMatrix();
   return sanitizeMatrix(doc.matrix);
 }
 

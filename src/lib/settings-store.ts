@@ -67,6 +67,20 @@ function blankAccess(value: boolean): Record<AppModule, boolean> {
   return Object.fromEntries(APP_MODULES.map((m) => [m.id, value])) as Record<AppModule, boolean>;
 }
 
+/** Fail-closed matrix: only Administrator has access until a saved Power Matrix exists. */
+export function closedMatrix(): Record<AppRole, Record<AppModule, boolean>> {
+  return {
+    Administrator: blankAccess(true),
+    Manager: blankAccess(false),
+    Sales: blankAccess(false),
+    Warehouse: blankAccess(false),
+    Accounts: blankAccess(false),
+    HR: blankAccess(false),
+    Delivery: blankAccess(false),
+    Auditor: blankAccess(false),
+  };
+}
+
 export function defaultMatrix(): Record<AppRole, Record<AppModule, boolean>> {
   return {
     Administrator: blankAccess(true),
