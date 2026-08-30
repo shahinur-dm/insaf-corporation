@@ -15,8 +15,13 @@ import { PartyNameLink } from "@/components/common/PartyNameLink";
 import { PrintDocHeader } from "@/components/common/PrintDocHeader";
 import { StockReport } from "@/components/reports/StockReport";
 import { CylinderLedger } from "@/components/cylinder/CylinderLedger";
+import { cylinderService } from "@/services/cylinder.service";
+import { buildCylinderBalanceReport, buildCylinderMovementLedger, buildCylinderOverdueRows } from "@/lib/cylinder-reports";
+import { isCylinderProduct } from "@/lib/cylinder-product";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatCurrency, formatDate } from "@/utils/formatters";
 import { useT } from "@/i18n";
 import { EMPTY_DATE_RANGE, filterByDateRange, type DateRange } from "@/lib/date-range";
@@ -26,6 +31,7 @@ import { Printer } from "lucide-react";
 const reports = [
   { id: "sales", key: "reports.sales" }, { id: "purchase", key: "reports.purchase" },
   { id: "stock", key: "reports.stock" }, { id: "cylinder", key: "reports.cylinder" },
+  { id: "cylMove", key: "reports.cylMove" }, { id: "cylBal", key: "reports.cylBal" }, { id: "cylOverdue", key: "reports.cylOverdue" },
   { id: "ar", key: "reports.ar" }, { id: "ap", key: "reports.ap" },
   { id: "cash", key: "reports.cash" }, { id: "bank", key: "reports.bank" },
   { id: "gl", key: "reports.gl" }, { id: "pnl", key: "reports.pnl" }, { id: "balanceSheet", key: "reports.balanceSheet" }, { id: "cashFlow", key: "reports.cashFlow" },
@@ -49,12 +55,34 @@ export function ReportsPage() {
   const { data: customers = [] } = useQuery({ queryKey: ["customers"], queryFn: customerService.list });
   const { data: suppliers = [] } = useQuery({ queryKey: ["suppliers"], queryFn: supplierService.list });
   const { data: assets = [] } = useQuery({ queryKey: ["assets"], queryFn: accountingService.listAssets });
+  const { data: cylinders = [] } = useQuery({ queryKey: ["cylinders"], queryFn: cylinderService.list });
+  const { data: cylMoves = [] } = useQuery({ queryKey: ["cylinderMovements"], queryFn: cylinderService.listMovements });
+  const [cylKind, setCylKind] = useState<"all" | "customer" | "supplier">("all");
+  const [cylProductId, setCylProductId] = useState("all");
 
   const sales = useMemo(() => filterByDateRange(salesRaw, range, (r) => r.date), [salesRaw, range]);
   const purchases = useMemo(() => filterByDateRange(purchasesRaw, range, (r) => r.date), [purchasesRaw, range]);
   const expenses = useMemo(() => filterByDateRange(expensesRaw, range, (r) => r.date), [expensesRaw, range]);
   const ledger = useMemo(() => filterByDateRange(ledgerRaw, range, (r) => r.date), [ledgerRaw, range]);
   const deliveries = useMemo(() => filterByDateRange(deliveriesRaw, range, (r) => r.date), [deliveriesRaw, range]);
+  const cylProducts = useMemo(() => products.filter((p) => isCylinderProduct(p) || p.uom === "cyl"), [products]);
+  const cylMoveRows = useMemo(
+    () => buildCylinderMovementLedger({ cylinders, movements: cylMoves, products, customers, suppliers, range })
+      .filter((r) => cylProductId === "all" || r.cylinder === (cylProducts.find((p) => p.id === cylProductId)?.name || r.cylinder))
+      .filter((r) => cylKind === "all" || r.partyKind === cylKind),
+    [cylinders, cylMoves, products, customers, suppliers, range, cylProductId, cylKind, cylProducts],
+  );
+  const cylBalRows = useMemo(
+    () => buildCylinderBalanceReport({ cylinders, movements: cylMoves, customers, suppliers, kind: cylKind })
+      .filter((r) => cylKind === "all" || r.kind === cylKind),
+    [cylinders, cylMoves, customers, suppliers, cylKind],
+  );
+  const cylOverdueRows = useMemo(
+    () => buildCylinderOverdueRows({ cylinders, movements: cylMoves, products, customers, suppliers })
+      .filter((r) => cylKind === "all" || r.partyKind === cylKind)
+      .filter((r) => cylProductId === "all" || r.cylinder === (cylProducts.find((p) => p.id === cylProductId)?.name || r.cylinder)),
+    [cylinders, cylMoves, products, customers, suppliers, cylKind, cylProductId, cylProducts],
+  );
 
   const productSales = useMemo(() => {
     const map = new Map<string, { productName: string; qty: number; amount: number }>();
@@ -320,6 +348,78 @@ export function ReportsPage() {
           )}
           {active === "stock" && <StockReport range={range} />}
           {active === "cylinder" && <CylinderLedger range={range} />}
+          {(active === "cylMove" || active === "cylBal" || active === "cylOverdue") && (
+            <div className="no-print mb-3 grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label>{t("reports.partyFilter")}</Label>
+                <Select value={cylKind} onValueChange={(v) => setCylKind(v as typeof cylKind)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{t("filter.all")}</SelectItem>
+                    <SelectItem value="customer">{t("common.customer")}</SelectItem>
+                    <SelectItem value="supplier">{t("common.supplier")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>{t("reports.cylType")}</Label>
+                <Select value={cylProductId} onValueChange={setCylProductId}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{t("filter.all")}</SelectItem>
+                    {cylProducts.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+          {active === "cylMove" && (
+            <DataTable
+              rows={cylMoveRows}
+              searchKeys={["party", "cylinder", "from", "to"]}
+              dateKey="date"
+              columns={[
+                { key: "date", header: t("common.date"), sortable: true, sortValue: (r) => r.date, render: (r) => formatDate(r.date) },
+                { key: "party", header: t("inventory.party"), sortable: true, sortValue: (r) => r.party, render: (r) => r.party },
+                { key: "mv", header: t("inventory.txn"), render: (r) => t(r.movementKey as any) },
+                { key: "cyl", header: t("reports.cylType"), render: (r) => r.cylinder },
+                { key: "qty", header: t("common.quantity"), render: (r) => r.qty, className: "text-right" },
+                { key: "from", header: t("reports.from"), render: (r) => r.from },
+                { key: "to", header: t("reports.to"), render: (r) => r.to },
+              ]}
+            />
+          )}
+          {active === "cylBal" && (
+            <DataTable
+              rows={cylBalRows}
+              searchKeys={["partner"]}
+              columns={[
+                { key: "p", header: t("reports.partner"), sortable: true, sortValue: (r) => r.partner, render: (r) => r.partner },
+                { key: "sent", header: t("customers.cylSent"), render: (r) => r.sent, className: "text-right" },
+                { key: "ret", header: t("customers.cylReturned"), render: (r) => r.returned, className: "text-right" },
+                { key: "rem", header: t("customers.cylRemaining"), render: (r) => r.remaining, className: "text-right" },
+                { key: "od", header: t("customers.cylOverdue"), render: (r) => r.overdue, className: "text-right" },
+                { key: "lost", header: t("customers.cylLost"), render: (r) => r.lost, className: "text-right" },
+                { key: "dmg", header: t("customers.cylDamaged"), render: (r) => r.damaged, className: "text-right" },
+              ]}
+            />
+          )}
+          {active === "cylOverdue" && (
+            <DataTable
+              rows={cylOverdueRows}
+              searchKeys={["party", "cylinder"]}
+              columns={[
+                { key: "party", header: t("inventory.party"), render: (r) => r.party },
+                { key: "cyl", header: t("reports.cylType"), render: (r) => r.cylinder },
+                { key: "sent", header: t("reports.sentDate"), render: (r) => formatDate(r.sentDate) },
+                { key: "exp", header: t("inventory.expectedReturn"), render: (r) => formatDate(r.expectedReturn) },
+                { key: "days", header: t("reports.daysOverdue"), render: (r) => r.daysOverdue, className: "text-right" },
+                { key: "qty", header: t("common.quantity"), render: (r) => r.quantity, className: "text-right" },
+              ]}
+            />
+          )}
           {active === "ar" && (
             <DataTable
               rows={arRows}

@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { useT } from "@/i18n";
 import { EMPTY_DATE_RANGE, filterByDateRange, type DateRange } from "@/lib/date-range";
-import { cylinderOverviewCounts } from "@/lib/cylinder-product";
+import { companyOwnedLocations, cylinderOverviewCounts } from "@/lib/cylinder-product";
 
 export function Dashboard() {
   const t = useT();
@@ -74,6 +74,7 @@ export function Dashboard() {
   const periodExpense = filteredExpenses.reduce((a, o) => a + o.amount, 0);
 
   const cylCounts = useMemo(() => cylinderOverviewCounts(cylinders), [cylinders]);
+  const owned = useMemo(() => companyOwnedLocations(cylinders), [cylinders]);
 
   const greetingName = user?.displayName || "Operator";
 
@@ -154,16 +155,37 @@ export function Dashboard() {
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <div data-reveal>
-        <StatCard title={t("cylinders.full")} value={String(cylCounts.full)} icon={CylinderIcon} tone="positive" to="/cylinders" />
+        <StatCard title={t("cylinders.full")} value={String(cylCounts.full)} icon={CylinderIcon} tone="positive" to="/inventory" />
         </div>
         <div data-reveal>
-        <StatCard title={t("cylinders.empty")} value={String(cylCounts.empty)} icon={Package} tone="info" to="/cylinders" />
+        <StatCard title={t("cylinders.empty")} value={String(cylCounts.empty)} icon={Package} tone="info" to="/inventory" />
         </div>
         <div data-reveal>
-        <StatCard title={t("cylinders.refillPending")} value={String(cylCounts.refillPending)} icon={AlertTriangle} tone="warning" to="/cylinders" />
+        <StatCard title={t("cylinders.refillPending")} value={String(cylCounts.refillPending)} icon={AlertTriangle} tone="warning" to="/inventory" />
         </div>
         <div data-reveal>
-        <StatCard title={t("cylinders.inTransit")} value={String(cylCounts.inTransit)} icon={Truck} to="/cylinders" />
+        <StatCard title={t("cylinders.inTransit")} value={String(cylCounts.inTransit)} icon={Truck} to="/inventory" />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-6">
+        <div data-reveal>
+          <StatCard title={t("dash.cylOwned")} value={String(owned.owned)} icon={CylinderIcon} to="/inventory" />
+        </div>
+        <div data-reveal>
+          <StatCard title={t("dash.cylWarehouse")} value={String(owned.warehouse)} icon={Package} to="/inventory" />
+        </div>
+        <div data-reveal>
+          <StatCard title={t("dash.cylCustomers")} value={String(owned.customers)} icon={Users} to="/customers" />
+        </div>
+        <div data-reveal>
+          <StatCard title={t("dash.cylSuppliers")} value={String(owned.suppliers)} icon={Truck} to="/suppliers" />
+        </div>
+        <div data-reveal>
+          <StatCard title={t("dash.cylLost")} value={String(owned.lost)} icon={AlertTriangle} tone="danger" to="/inventory" />
+        </div>
+        <div data-reveal>
+          <StatCard title={t("dash.cylDamaged")} value={String(owned.damaged)} icon={AlertTriangle} tone="warning" to="/inventory" />
         </div>
       </div>
 

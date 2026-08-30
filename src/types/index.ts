@@ -88,6 +88,8 @@ export interface Cylinder {
   gasCategory?: ProductCategory;
   /** Full vs empty gas contents. Returned empties are empty until refilled. */
   fillLevel?: CylinderFillLevel;
+  /** Company-owned unless sold to the customer. */
+  ownedBy?: "company" | "customer";
   lastMovementAt: string;
   createdAt: string;
 }
@@ -115,6 +117,24 @@ export interface CylinderMovement {
   /** True when the cylinder was sold (ownership transfer), not loaned. */
   sold?: boolean;
   expectedReturnAt?: string;
+  purpose?:
+    | "sent"
+    | "return"
+    | "refill_sent"
+    | "refill_return"
+    | "exchange_out"
+    | "exchange_in"
+    | "loan"
+    | "loan_return"
+    | "lost"
+    | "damaged"
+    | "repair"
+    | "scrap"
+    | "writeoff"
+    | "sale";
+  reason?: string;
+  penaltyAmount?: number;
+  accountingTreatment?: "charge" | "writeoff" | "none";
 }
 
 export interface LineItem {

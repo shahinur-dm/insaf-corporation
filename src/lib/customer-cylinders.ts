@@ -115,7 +115,7 @@ export function partyCylinderBalance(
   return {
     sent,
     returned,
-    remaining: sent - returned,
+    remaining: sent - returned - lost,
     overdue: overdueCount(kind, id, cylinders, movements),
     lost,
     damaged,

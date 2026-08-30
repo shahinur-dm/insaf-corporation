@@ -62,6 +62,34 @@ export function cylinderWarehouseEmpty(c: Pick<Cylinder, "status" | "fillLevel" 
 }
 
 /** Map existing cylinder statuses into overview buckets. */
+export function isCompanyOwned(c: Pick<Cylinder, "ownedBy">) {
+  return c.ownedBy !== "customer";
+}
+
+/** Company-owned cylinders by location — never typed in. */
+export function companyOwnedLocations(cylinders: Pick<Cylinder, "status" | "fillLevel" | "supplierId" | "ownedBy">[]) {
+  const company = cylinders.filter((c) => isCompanyOwned(c));
+  let warehouse = 0;
+  let customers = 0;
+  let suppliers = 0;
+  let inRefill = 0;
+  let lost = 0;
+  let damaged = 0;
+  for (const c of company) {
+    if (c.status === "lost") lost += 1;
+    else if (c.status === "damaged") damaged += 1;
+    else if (cylinderAtSupplier(c)) {
+      suppliers += 1;
+      inRefill += 1;
+    } else if (c.status === "at_customer") customers += 1;
+    else if (c.status === "refilling" || cylinderWarehouseEmpty(c)) {
+      warehouse += 1;
+      if (c.status === "refilling") inRefill += 1;
+    } else warehouse += 1;
+  }
+  return { owned: company.length, warehouse, customers, suppliers, inRefill, lost, damaged };
+}
+
 export function cylinderOverviewCounts(cylinders: Pick<Cylinder, "status" | "fillLevel">[]) {
   let full = 0;
   let empty = 0;

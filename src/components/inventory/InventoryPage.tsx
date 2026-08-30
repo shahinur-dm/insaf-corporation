@@ -9,6 +9,7 @@ import { cylinderService } from "@/services/cylinder.service";
 import { salesService } from "@/services/sales.service";
 import { deliveryService } from "@/services/delivery.service";
 import { supplierService } from "@/services/supplier.service";
+import { customerService } from "@/services/customer.service";
 import { PageHeader } from "@/components/common/PageHeader";
 import { DataTable } from "@/components/common/DataTable";
 import { StatCard } from "@/components/dashboard/widgets/StatCard";
@@ -71,6 +72,7 @@ export function InventoryPage() {
   const { data: sales = [] } = useQuery({ queryKey: ["sales"], queryFn: salesService.list });
   const { data: deliveries = [] } = useQuery({ queryKey: ["deliveries"], queryFn: deliveryService.list });
   const { data: suppliers = [] } = useQuery({ queryKey: ["suppliers"], queryFn: supplierService.list });
+  const { data: customers = [] } = useQuery({ queryKey: ["customers"], queryFn: customerService.list });
 
   const rows = useMemo(
     () => buildProductInventory(products, cylinders, sales, deliveries, movements),
@@ -84,12 +86,20 @@ export function InventoryPage() {
 
   const [productId, setProductId] = useState("");
   const [qty, setQty] = useState("1");
-  const [type, setType] = useState<"in" | "out" | "adjust" | "refill" | "send_supplier" | "receive_supplier">("in");
+  const [type, setType] = useState<
+    "in" | "out" | "adjust" | "refill" | "send_supplier" | "receive_supplier"
+    | "return_empty" | "loan" | "mark_lost" | "mark_damaged" | "repair" | "scrap" | "writeoff" | "sell_cylinder"
+  >("in");
   const [notes, setNotes] = useState("");
   const [supplierId, setSupplierId] = useState("");
+  const [customerId, setCustomerId] = useState("");
+  const [partyKind, setPartyKind] = useState<"customer" | "supplier">("customer");
   const [sendDate, setSendDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [expectedReturn, setExpectedReturn] = useState("");
   const [condition, setCondition] = useState<"full" | "empty" | "damaged">("full");
+  const [reason, setReason] = useState("");
+  const [penalty, setPenalty] = useState("0");
+  const [treatment, setTreatment] = useState<"charge" | "writeoff" | "none">("none");
   const [focus, setFocus] = useState<"all" | "full" | "empty" | "refill" | "reserved" | "available">("all");
 
   const filteredRows = useMemo(() => {
@@ -123,6 +133,29 @@ export function InventoryPage() {
           supplierId, productId, quantity: Number(qty), condition, notes,
         });
       }
+      if (type === "return_empty") return inventoryService.returnEmpty({ customerId, productId, quantity: Number(qty), notes });
+      if (type === "loan") {
+        return inventoryService.loanToCustomer({
+          customerId, productId, quantity: Number(qty), issueDate: sendDate, expectedReturnDate: expectedReturn || undefined, notes,
+        });
+      }
+      if (type === "mark_lost") {
+        return inventoryService.markLost({
+          partyKind,
+          partyId: partyKind === "customer" ? customerId : supplierId,
+          productId,
+          quantity: Number(qty),
+          lostDate: sendDate,
+          reason,
+          penaltyAmount: Number(penalty) || 0,
+          accountingTreatment: treatment,
+        });
+      }
+      if (type === "mark_damaged") return inventoryService.markDamaged(productId, Number(qty), notes);
+      if (type === "repair" || type === "scrap" || type === "writeoff") {
+        return inventoryService.resolveDamage(productId, Number(qty), type, notes);
+      }
+      if (type === "sell_cylinder") return inventoryService.sellCylinders({ customerId, productId, quantity: Number(qty), notes });
       return inventoryService.adjust(productId, Number(qty), type, notes);
     },
     onSuccess: () => {
@@ -211,10 +244,18 @@ export function InventoryPage() {
                   <SelectItem value="refill">{t("inventory.refillComplete")}</SelectItem>
                   <SelectItem value="send_supplier">{t("inventory.sendSupplier")}</SelectItem>
                   <SelectItem value="receive_supplier">{t("inventory.receiveSupplier")}</SelectItem>
+                  <SelectItem value="return_empty">{t("inventory.returnEmpty")}</SelectItem>
+                  <SelectItem value="loan">{t("inventory.loan")}</SelectItem>
+                  <SelectItem value="sell_cylinder">{t("inventory.sellCylinder")}</SelectItem>
+                  <SelectItem value="mark_lost">{t("inventory.markLost")}</SelectItem>
+                  <SelectItem value="mark_damaged">{t("inventory.markDamaged")}</SelectItem>
+                  <SelectItem value="repair">{t("inventory.repair")}</SelectItem>
+                  <SelectItem value="scrap">{t("inventory.scrap")}</SelectItem>
+                  <SelectItem value="writeoff">{t("inventory.writeoff")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            {(type === "send_supplier" || type === "receive_supplier") && (
+            {(type === "send_supplier" || type === "receive_supplier" || (type === "mark_lost" && partyKind === "supplier")) && (
               <div className="space-y-1.5">
                 <Label>{t("common.supplier")}</Label>
                 <Select value={supplierId || undefined} onValueChange={setSupplierId}>
@@ -227,15 +268,65 @@ export function InventoryPage() {
                 </Select>
               </div>
             )}
-            {type === "send_supplier" && (
+            {type === "mark_lost" && (
+              <div className="space-y-1.5">
+                <Label>{t("inventory.partyKind")}</Label>
+                <Select value={partyKind} onValueChange={(v) => setPartyKind(v as typeof partyKind)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="customer">{t("common.customer")}</SelectItem>
+                    <SelectItem value="supplier">{t("common.supplier")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {(type === "return_empty" || type === "loan" || type === "sell_cylinder" || (type === "mark_lost" && partyKind === "customer")) && (
+              <div className="space-y-1.5">
+                <Label>{t("common.customer")}</Label>
+                <Select value={customerId || undefined} onValueChange={setCustomerId}>
+                  <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
+                  <SelectContent>
+                    {customers.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {(type === "send_supplier" || type === "loan" || type === "mark_lost") && (
               <>
                 <div className="space-y-1.5">
                   <Label>{t("common.date")}</Label>
                   <Input type="date" value={sendDate} onChange={(e) => setSendDate(e.target.value)} />
                 </div>
+                {(type === "send_supplier" || type === "loan") && (
+                  <div className="space-y-1.5">
+                    <Label>{t("inventory.expectedReturn")}</Label>
+                    <Input type="date" value={expectedReturn} onChange={(e) => setExpectedReturn(e.target.value)} />
+                  </div>
+                )}
+              </>
+            )}
+            {type === "mark_lost" && (
+              <>
                 <div className="space-y-1.5">
-                  <Label>{t("inventory.expectedReturn")}</Label>
-                  <Input type="date" value={expectedReturn} onChange={(e) => setExpectedReturn(e.target.value)} />
+                  <Label>{t("inventory.reason")}</Label>
+                  <Input value={reason} onChange={(e) => setReason(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>{t("inventory.penalty")}</Label>
+                  <Input type="number" min={0} value={penalty} onChange={(e) => setPenalty(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>{t("inventory.accounting")}</Label>
+                  <Select value={treatment} onValueChange={(v) => setTreatment(v as typeof treatment)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">{t("inventory.acct.none")}</SelectItem>
+                      <SelectItem value="charge">{t("inventory.acct.charge")}</SelectItem>
+                      <SelectItem value="writeoff">{t("inventory.acct.writeoff")}</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </>
             )}
@@ -260,7 +351,7 @@ export function InventoryPage() {
               <Label>{type === "refill" ? t("inventory.receivedBy") : t("common.notes")}</Label>
               <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
             </div>
-            <Button className="w-full" disabled={!productId || adjust.isPending || Number(qty) < 0 || ((type === "send_supplier" || type === "receive_supplier") && !supplierId)} onClick={() => { if (adjust.isPending) return; adjust.mutate(); }}>
+            <Button className="w-full" disabled={!productId || adjust.isPending || Number(qty) < 0 || ((type === "send_supplier" || type === "receive_supplier" || (type === "mark_lost" && partyKind === "supplier")) && !supplierId) || ((type === "return_empty" || type === "loan" || type === "sell_cylinder" || (type === "mark_lost" && partyKind === "customer")) && !customerId)} onClick={() => { if (adjust.isPending) return; adjust.mutate(); }}>
               {t("inventory.apply")}
             </Button>
           </CardContent>
