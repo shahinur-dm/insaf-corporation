@@ -16,7 +16,8 @@ import { PrintDocHeader } from "@/components/common/PrintDocHeader";
 import { StockReport } from "@/components/reports/StockReport";
 import { CylinderLedger } from "@/components/cylinder/CylinderLedger";
 import { cylinderService } from "@/services/cylinder.service";
-import { buildCylinderBalanceReport, buildCylinderMovementLedger, buildCylinderOverdueRows } from "@/lib/cylinder-reports";
+import { buildCylinderMovementLedger, buildCylinderOverdueRows } from "@/lib/cylinder-reports";
+import { getCylinderAccountabilityFn, type CylinderBalanceStatus } from "@/lib/cylinder.functions";
 import { isCylinderProduct } from "@/lib/cylinder-product";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -59,6 +60,7 @@ export function ReportsPage() {
   const { data: cylMoves = [] } = useQuery({ queryKey: ["cylinderMovements"], queryFn: cylinderService.listMovements });
   const [cylKind, setCylKind] = useState<"all" | "customer" | "supplier">("all");
   const [cylProductId, setCylProductId] = useState("all");
+  const [cylStatus, setCylStatus] = useState<CylinderBalanceStatus>("all");
 
   const sales = useMemo(() => filterByDateRange(salesRaw, range, (r) => r.date), [salesRaw, range]);
   const purchases = useMemo(() => filterByDateRange(purchasesRaw, range, (r) => r.date), [purchasesRaw, range]);
@@ -72,11 +74,18 @@ export function ReportsPage() {
       .filter((r) => cylKind === "all" || r.partyKind === cylKind),
     [cylinders, cylMoves, products, customers, suppliers, range, cylProductId, cylKind, cylProducts],
   );
-  const cylBalRows = useMemo(
-    () => buildCylinderBalanceReport({ cylinders, movements: cylMoves, customers, suppliers, kind: cylKind })
-      .filter((r) => cylKind === "all" || r.kind === cylKind),
-    [cylinders, cylMoves, customers, suppliers, cylKind],
-  );
+  const { data: cylAcc } = useQuery({
+    queryKey: ["cylAccountability", cylKind, cylProductId, range, cylStatus],
+    queryFn: () => getCylinderAccountabilityFn({
+      data: {
+        kind: cylKind,
+        productId: cylProductId === "all" ? undefined : cylProductId,
+        range,
+        status: cylStatus,
+      },
+    }),
+  });
+  const cylBalRows = cylAcc?.parties ?? [];
   const cylOverdueRows = useMemo(
     () => buildCylinderOverdueRows({ cylinders, movements: cylMoves, products, customers, suppliers })
       .filter((r) => cylKind === "all" || r.partyKind === cylKind)
@@ -349,7 +358,7 @@ export function ReportsPage() {
           {active === "stock" && <StockReport range={range} />}
           {active === "cylinder" && <CylinderLedger range={range} />}
           {(active === "cylMove" || active === "cylBal" || active === "cylOverdue") && (
-            <div className="no-print mb-3 grid gap-3 sm:grid-cols-2">
+            <div className="no-print mb-3 grid gap-3 sm:grid-cols-3">
               <div className="space-y-1.5">
                 <Label>{t("reports.partyFilter")}</Label>
                 <Select value={cylKind} onValueChange={(v) => setCylKind(v as typeof cylKind)}>
@@ -373,6 +382,24 @@ export function ReportsPage() {
                   </SelectContent>
                 </Select>
               </div>
+              {active === "cylBal" && (
+                <div className="space-y-1.5">
+                  <Label>{t("reports.cylStatus")}</Label>
+                  <Select value={cylStatus} onValueChange={(v) => setCylStatus(v as CylinderBalanceStatus)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{t("filter.all")}</SelectItem>
+                      <SelectItem value="outstanding">{t("reports.cylStatus.outstanding")}</SelectItem>
+                      <SelectItem value="overdue">{t("reports.cylStatus.overdue")}</SelectItem>
+                      <SelectItem value="lost">{t("reports.cylStatus.lost")}</SelectItem>
+                      <SelectItem value="damaged">{t("reports.cylStatus.damaged")}</SelectItem>
+                      <SelectItem value="refill">{t("reports.cylStatus.refill")}</SelectItem>
+                      <SelectItem value="full">{t("reports.cylStatus.full")}</SelectItem>
+                      <SelectItem value="empty">{t("reports.cylStatus.empty")}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
           )}
           {active === "cylMove" && (
@@ -392,6 +419,8 @@ export function ReportsPage() {
             />
           )}
           {active === "cylBal" && (
+            <>
+            <p className="mb-2 text-xs text-muted-foreground">{t("customers.cylRemainingHint")}</p>
             <DataTable
               rows={cylBalRows}
               searchKeys={["partner"]}
@@ -405,6 +434,7 @@ export function ReportsPage() {
                 { key: "dmg", header: t("customers.cylDamaged"), render: (r) => r.damaged, className: "text-right" },
               ]}
             />
+            </>
           )}
           {active === "cylOverdue" && (
             <DataTable

@@ -1,8 +1,9 @@
 import { getDb } from "./mongo.server";
+import { isDemoLoginEnabled } from "./session.server";
 import { seedAppUsers } from "./seed-data";
 import { APP_ROLES, type AppRole } from "./settings-store";
 import type { AppUserDoc, PublicAppUser } from "./users.types";
-import { hashPassword, verifyPassword } from "./password.server";
+import { hashPassword, isHashedPassword, verifyPassword } from "./password.server";
 
 export type { AppUserDoc, PublicAppUser } from "./users.types";
 
@@ -18,9 +19,12 @@ async function ensureUsers() {
   try { await coll.createIndex({ id: 1 }, { unique: true }); } catch {}
   try { await coll.createIndex({ username: 1 }, { unique: true }); } catch {}
   const count = await coll.estimatedDocumentCount();
-  if (count === 0) {
+  if (count === 0 && isDemoLoginEnabled()) {
     try {
-      await coll.insertMany(seedAppUsers.map((u) => ({ ...u })), { ordered: false });
+      await coll.insertMany(seedAppUsers.map((u) => ({
+        ...u,
+        password: isHashedPassword(u.password) ? u.password : hashPassword(u.password),
+      })), { ordered: false });
     } catch {}
   }
 }
@@ -56,8 +60,15 @@ export async function findUserByCredentials(username: string, password: string):
   });
   if (!doc) return null;
   const user = clean<AppUserDoc>(doc);
-  if (!verifyPassword(password, user.password)) return null;
-  return user;
+  if (isHashedPassword(user.password)) {
+    if (!verifyPassword(password, user.password)) return null;
+    return user;
+  }
+  // One-time upgrade of a legacy plaintext row. Never log the secret.
+  if (!user.password || user.password !== password) return null;
+  const hashed = hashPassword(password);
+  await db.collection("appUsers").updateOne({ id: user.id }, { $set: { password: hashed } });
+  return { ...user, password: hashed };
 }
 
 export async function listLoginDirectory(): Promise<Array<{

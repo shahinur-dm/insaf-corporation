@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { getAuthCredentials, useAppSession } from "./session.server";
+import { getAuthCredentials, isDemoLoginEnabled, useAppSession } from "./session.server";
 import type { AuthUser } from "@/types";
 
 export const getSessionFn = createServerFn({ method: "GET" }).handler(async (): Promise<{ user: AuthUser } | null> => {
@@ -31,11 +31,12 @@ export const loginFn = createServerFn({ method: "POST" })
       // Fall through to env credentials if Mongo is unavailable.
     }
 
-    // Env fallback for bootstrap / emergency access.
+    // Env fallback for bootstrap / emergency access (no silent production defaults).
     const creds = getAuthCredentials();
     if (
-      username === creds.username.toLowerCase() &&
-      password === creds.password
+      creds
+      && username === creds.username.toLowerCase()
+      && password === creds.password
     ) {
       const user: AuthUser = {
         username: creds.username,
@@ -49,6 +50,10 @@ export const loginFn = createServerFn({ method: "POST" })
 
     return { ok: false, error: "Invalid username or password" };
   });
+
+export const demoLoginEnabledFn = createServerFn({ method: "GET" }).handler(async () => {
+  return { enabled: isDemoLoginEnabled() };
+});
 
 export const logoutFn = createServerFn({ method: "POST" }).handler(async () => {
   const session = await useAppSession();

@@ -9,6 +9,7 @@ import type {
 import { crudFn, dashboardFn, notificationsFn } from "@/lib/data.functions";
 import { genOrderNo } from "@/utils/helpers";
 import { cylinderIsEmpty, cylinderIsFullStock, isCylinderProduct, isCylinderSaleLine, pickFifo, suggestSerials } from "@/lib/cylinder-product";
+import { issueLockIsActive } from "@/lib/cylinder-lock";
 
 const call = async <T,>(op: any, coll: any, id?: string, payload?: any): Promise<T> => {
   return (await crudFn({ data: { op, coll, id, payload } })) as T;
@@ -20,41 +21,59 @@ async function takeWarehouseFull(productId: string, qty: number, lotNumber?: str
   const product = await call<Product | null>("get", "products", productId);
   if (!product) throw new Error("Product not found");
   if (method === "lot" && !lotNumber?.trim()) throw new Error("Lot number required");
-  let pool = (await call<Cylinder[]>("list", "cylinders"))
+  const pool = (await call<Cylinder[]>("list", "cylinders"))
     .filter((c) =>
       c.productId === productId
       && cylinderIsFullStock(c)
       && c.ownedBy !== "customer"
+      && !issueLockIsActive(c.issueLock)
       && (!lotNumber || c.lotNumber === lotNumber),
     )
     .sort((a, b) => a.lastMovementAt.localeCompare(b.lastMovementAt));
-  if (pool.length < qty && method !== "serial") {
-    const need = qty - pool.length;
-    const stamp = Date.now().toString(36);
-    for (let i = 0; i < need; i += 1) {
-      const serial = lotNumber
-        ? `${lotNumber}-${stamp}-${String(i + 1).padStart(3, "0")}`
-        : `QTY-${(product.code || "CYL").replace(/\s+/g, "")}-${stamp}-${i + 1}`;
-      const now = new Date().toISOString();
-      const created = await call<Cylinder>("create", "cylinders", undefined, {
-        serialNumber: serial,
-        productId,
-        capacity: 0,
-        status: "in_stock",
-        location: "Warehouse",
-        fillLevel: "full",
-        lotNumber: lotNumber || undefined,
-        ownedBy: "company",
-        createdAt: now,
-        lastMovementAt: now,
-      });
-      pool.push(created);
+  if (pool.length < qty) {
+    const lotNote = lotNumber ? ` in lot ${lotNumber}` : "";
+    throw new Error(
+      `Insufficient company-owned cylinder quantity${lotNote}. Available: ${pool.length}, Requested: ${qty}. Please add stock first.`,
+    );
+  }
+  const chosen = pool.slice(0, qty);
+  await claimCylinderIds(chosen.map((c) => c.id), ["in_stock", "in_transit"]);
+  return chosen;
+}
+
+async function releaseIssueLocks(ids: string[]) {
+  for (const id of ids) {
+    try { await call("update", "cylinders", id, { issueLock: null }); } catch { /* keep trying */ }
+  }
+}
+
+async function claimCylinderIds(ids: string[], statuses: Cylinder["status"][]) {
+  const claimed: string[] = [];
+  for (const id of ids) {
+    try {
+      await call("claim", "cylinders", id, { statuses });
+      claimed.push(id);
+    } catch {
+      await releaseIssueLocks(claimed);
+      throw new Error("Cylinder is no longer available. Another transaction may have issued it.");
     }
   }
-  if (pool.length < qty) {
-    throw new Error(`Only ${pool.length} full company-owned cylinder(s) available for ${product.name}`);
+}
+
+async function afterCylinderClaim<T>(ids: string[], work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (err) {
+    await releaseIssueLocks(ids);
+    throw err;
   }
-  return pool.slice(0, qty);
+}
+
+function lastCustomerPurpose(movements: CylinderMovement[], cylinderId: string, customerId: string) {
+  return movements
+    .filter((m) => m.cylinderId === cylinderId && m.customerId === customerId)
+    .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+    .at(-1)?.purpose;
 }
 
 type StockMeta = { refType?: StockMovement["refType"]; refId?: string; notes?: string; by?: string };
@@ -301,12 +320,15 @@ async function adjustStock(
 function statusFromMovement(type: CylinderMovement["type"]): CylinderStatus {
   switch (type) {
     case "issued": return "at_customer";
-    case "returned": return "refilling";
+    case "returned": return "in_stock";
     case "received":
     case "refilled": return "in_stock";
     case "transferred": return "in_transit";
     case "damaged": return "damaged";
     case "lost": return "lost";
+    case "stock_out": return "stock_out";
+    case "scrapped": return "scrapped";
+    case "written_off": return "written_off";
     default: return "in_stock";
   }
 }
@@ -414,14 +436,35 @@ export const productService = {
 export const cylinderService = {
   list: () => call<Cylinder[]>("list", "cylinders"),
   get: (id: string) => call<Cylinder | null>("get", "cylinders", id),
-  create: (data: Omit<Cylinder, "id" | "createdAt" | "lastMovementAt">) => {
+  create: async (data: Omit<Cylinder, "id" | "createdAt" | "lastMovementAt"> & { skipIntakeMovement?: boolean }) => {
     const now = new Date().toISOString();
-    const fillLevel = data.fillLevel
-      ?? (data.status === "refilling" ? "empty" : data.status === "in_stock" ? "full" : "full");
-    return call<Cylinder>("create", "cylinders", undefined, { ...data, fillLevel, createdAt: now, lastMovementAt: now });
+    const { skipIntakeMovement, ...rest } = data;
+    if (!skipIntakeMovement) {
+      rest.status = "in_stock";
+    } else if (rest.status && rest.status !== "in_stock" && rest.status !== "in_transit") {
+      throw new Error("New cylinders must start in warehouse. Use Inventory movements to change status.");
+    }
+    const fillLevel = rest.fillLevel ?? "full";
+    const created = await call<Cylinder>("create", "cylinders", undefined, { ...rest, fillLevel, createdAt: now, lastMovementAt: now });
+    if (!skipIntakeMovement) {
+      await cylinderService.addMovement({
+        cylinderId: created.id,
+        type: "received",
+        fromLocation: rest.location || "Intake",
+        toLocation: rest.location || "Warehouse",
+        notes: "Cylinder record created",
+        by: "Warehouse",
+      });
+    }
+    return created;
   },
   update: async (id: string, data: Partial<Cylinder>) => {
-    const { createdAt: _createdAt, ...rest } = data;
+    const existing = await call<Cylinder | null>("get", "cylinders", id);
+    if (!existing) throw new Error("Cylinder not found");
+    if (data.status && data.status !== existing.status) {
+      throw new Error("Change cylinder status through Inventory or Delivery movements.");
+    }
+    const { createdAt: _createdAt, status: _status, ...rest } = data;
     return call<Cylinder>("update", "cylinders", id, rest);
   },
   remove: (id: string) => call<{ ok: true }>("remove", "cylinders", id),
@@ -435,7 +478,7 @@ export const cylinderService = {
     const mv = await call<CylinderMovement>("create", "movements", undefined, { ...data, timestamp: now });
     const status = statusFromMovement(data.type);
     const fillLevel = fillLevelFromMovement(data.type);
-    const patch: Record<string, unknown> = { lastMovementAt: mv.timestamp, status };
+    const patch: Record<string, unknown> = { lastMovementAt: mv.timestamp, status, issueLock: null };
     if (fillLevel) patch.fillLevel = fillLevel;
     if (data.toLocation) patch.location = data.toLocation;
     if (data.sold || data.purpose === "sale") patch.ownedBy = "customer";
@@ -448,7 +491,7 @@ export const cylinderService = {
     } else if (data.type === "returned" || data.type === "received" || data.type === "refilled") {
       patch.customerId = null;
       if (data.supplierId || data.type === "received" || data.type === "refilled") patch.supplierId = null;
-    } else if (data.type === "damaged" || data.type === "lost") {
+    } else if (data.type === "damaged" || data.type === "lost" || data.type === "stock_out" || data.type === "scrapped" || data.type === "written_off") {
       patch.customerId = null;
       patch.supplierId = null;
     } else if (data.customerId) patch.customerId = data.customerId;
@@ -616,7 +659,7 @@ export const deliveryService = {
     if (existing.status !== "pending") throw new Error("Only pending deliveries can be deleted");
     return call<{ ok: true }>("remove", "deliveries", id);
   },
-  confirm: async (id: string, payload?: { issuedIdsByItem?: string[][]; returnedIds?: string[]; lotNumber?: string }) => {
+  confirm: async (id: string, payload?: { issuedIdsByItem?: string[][]; returnedIds?: string[]; lotNumber?: string; expectedReturnAt?: string; skipCylinders?: boolean; asExchange?: boolean }) => {
     const delivery = await call<Delivery | null>("get", "deliveries", id);
     if (!delivery) throw new Error("Delivery not found");
     if (delivery.status !== "pending" && delivery.status !== "in_transit") {
@@ -630,7 +673,63 @@ export const deliveryService = {
       return assigned ? { ...item, cylinderIds: assigned } : item;
     });
 
+    if (payload?.skipCylinders) {
+      const alreadyOut = await hasStockOut("delivery", id);
+      const soAlreadyOut = delivery.salesOrderId ? await hasStockOut("sales", delivery.salesOrderId) : false;
+      const gasItems = nextItems.filter((item) => {
+        const p = products.find((x) => x.id === item.productId);
+        return !isCylinderProduct(p);
+      });
+      if (!alreadyOut && !soAlreadyOut && gasItems.length) {
+        await adjustStock(gasItems, -1, {
+          refType: "delivery", refId: id, notes: delivery.challanNo, by: delivery.receiverName || "Delivery",
+        });
+      }
+      if (delivery.salesOrderId) {
+        const so = await call<SalesOrder | null>("get", "sales", delivery.salesOrderId);
+        if (so && so.status === "confirmed") {
+          await call("update", "sales", so.id, { status: "invoiced" });
+        }
+      }
+      return call<Delivery>("update", "deliveries", id, {
+        status: "delivered",
+        confirmedAt: new Date().toISOString(),
+        emptyReturned: 0,
+        items: nextItems,
+      });
+    }
+
     const used = new Set<string>();
+    for (let i = 0; i < nextItems.length; i += 1) {
+      const item = nextItems[i];
+      const p = products.find((x) => x.id === item.productId);
+      if (!isCylinderProduct(p)) continue;
+      const sold = isCylinderSaleLine(item, p);
+      if (!sold && item.quantity > 0 && !payload?.expectedReturnAt) {
+        throw new Error("Expected return date is required for customer cylinder send");
+      }
+      const ids = item.cylinderIds || [];
+      if (ids.length === item.quantity) {
+        for (const cid of ids) {
+          if (used.has(cid)) throw new Error("Duplicate cylinder selected");
+          used.add(cid);
+          const cyl = allCyl.find((c) => c.id === cid);
+          if (!cyl) throw new Error("Cylinder not found");
+          if (cyl.productId !== item.productId) {
+            throw new Error(`${cyl.serialNumber} does not match ${item.productName}`);
+          }
+          if (cyl.status !== "in_stock" && cyl.status !== "in_transit") {
+            throw new Error(`${cyl.serialNumber} is ${cyl.status}, not available to issue`);
+          }
+          if (cylinderIsEmpty(cyl)) {
+            throw new Error(`${cyl.serialNumber} is empty and must be refilled before issue`);
+          }
+        }
+      }
+    }
+
+    const claimedIds: string[] = [];
+    try {
     for (let i = 0; i < nextItems.length; i += 1) {
       const item = nextItems[i];
       const p = products.find((x) => x.id === item.productId);
@@ -640,28 +739,20 @@ export const deliveryService = {
         const picked = await takeWarehouseFull(item.productId, item.quantity, payload?.lotNumber);
         ids = picked.map((c) => c.id);
         nextItems[i] = { ...item, cylinderIds: ids };
+      } else {
+        await claimCylinderIds(ids, ["in_stock", "in_transit"]);
       }
-      for (const cid of ids) {
-        if (used.has(cid)) throw new Error("Duplicate cylinder selected");
-        used.add(cid);
-        const cyl = allCyl.find((c) => c.id === cid);
-        if (!cyl) throw new Error("Cylinder not found");
-        if (cyl.productId !== item.productId) {
-          throw new Error(`${cyl.serialNumber} does not match ${item.productName}`);
-        }
-        if (cyl.status !== "in_stock" && cyl.status !== "in_transit") {
-          throw new Error(`${cyl.serialNumber} is ${cyl.status}, not available to issue`);
-        }
-        if (cylinderIsEmpty(cyl)) {
-          throw new Error(`${cyl.serialNumber} is empty and must be refilled before issue`);
-        }
-      }
+      claimedIds.push(...ids);
     }
 
     const alreadyOut = await hasStockOut("delivery", id);
     const soAlreadyOut = delivery.salesOrderId ? await hasStockOut("sales", delivery.salesOrderId) : false;
-    if (!alreadyOut && !soAlreadyOut) {
-      await adjustStock(nextItems, -1, {
+    const gasItems = nextItems.filter((item) => {
+      const p = products.find((x) => x.id === item.productId);
+      return !isCylinderProduct(p);
+    });
+    if (!alreadyOut && !soAlreadyOut && gasItems.length) {
+      await adjustStock(gasItems, -1, {
         refType: "delivery", refId: id, notes: delivery.challanNo, by: delivery.receiverName || "Delivery",
       });
     }
@@ -672,10 +763,21 @@ export const deliveryService = {
       }
     }
 
+    const issuedCount = nextItems.reduce((n, item) => n + (item.cylinderIds?.length || 0), 0);
+    const returnedCount = payload?.returnedIds?.length || 0;
+    if (payload?.asExchange) {
+      if (issuedCount <= 0 || returnedCount <= 0) {
+        throw new Error("Exchange requires empty returns and full issues");
+      }
+      if (issuedCount !== returnedCount) {
+        throw new Error("Exchange requires equal empty returns and full issues");
+      }
+    }
+    const exchange = payload?.asExchange === true;
+
     for (const item of nextItems) {
       const p = products.find((x) => x.id === item.productId);
       const sold = isCylinderSaleLine(item, p);
-      const exchange = Boolean(payload?.returnedIds?.length);
       for (const cid of item.cylinderIds || []) {
         await cylinderService.addMovement({
           cylinderId: cid,
@@ -690,26 +792,29 @@ export const deliveryService = {
               : `Auto-issued from Delivery ${delivery.challanNo}`,
           by: "Delivery",
           sold,
-          purpose: sold ? "sale" : exchange ? "exchange_in" : "sent",
+          purpose: sold ? "sale" : exchange ? "exchange_out" : "sent",
+          expectedReturnAt: sold ? undefined : payload?.expectedReturnAt,
         });
       }
     }
 
+    const priorMoves = await call<CylinderMovement[]>("list", "movements");
     for (const cid of payload?.returnedIds || []) {
       const cyl = allCyl.find((c) => c.id === cid);
       if (!cyl) throw new Error("Return cylinder not found");
       if (cyl.customerId && cyl.customerId !== delivery.customerId) {
         throw new Error(`${cyl.serialNumber} belongs to another customer`);
       }
+      const loaned = lastCustomerPurpose(priorMoves, cid, delivery.customerId) === "loan";
       await cylinderService.addMovement({
         cylinderId: cid,
         type: "returned",
         customerId: delivery.customerId,
         fromLocation: delivery.customerName,
         toLocation: "Warehouse",
-        notes: (payload?.issuedIdsByItem?.some((row) => row?.length) ? `Exchange out with Delivery ${delivery.challanNo}` : `Empty returned with Delivery ${delivery.challanNo}`),
+        notes: exchange ? `Exchange return with Delivery ${delivery.challanNo}` : `Empty returned with Delivery ${delivery.challanNo}`,
         by: "Delivery",
-        purpose: payload?.issuedIdsByItem?.some((row) => row?.length) ? "exchange_out" : "return",
+        purpose: exchange ? "exchange_in" : loaned ? "loan_return" : "return",
       });
     }
 
@@ -719,6 +824,10 @@ export const deliveryService = {
       emptyReturned: payload?.returnedIds?.length || 0,
       items: nextItems,
     });
+    } catch (err) {
+      await releaseIssueLocks(claimedIds);
+      throw err;
+    }
   },
 };
 
@@ -781,7 +890,12 @@ export const purchaseService = {
   list: () => call<PurchaseOrder[]>("list", "purchases"),
   get: (id: string) => call<PurchaseOrder | null>("get", "purchases", id),
   create: async (data: Omit<PurchaseOrder, "id">) => {
-    return call<PurchaseOrder>("create", "purchases", undefined, data);
+    return call<PurchaseOrder>("create", "purchases", undefined, {
+      ...data,
+      paid: 0,
+      tax: 0,
+      status: "ordered",
+    });
   },
   update: async (id: string, data: Partial<PurchaseOrder>) => {
     const existing = await call<PurchaseOrder | null>("get", "purchases", id);
@@ -829,12 +943,14 @@ export const purchaseService = {
     }
     return call<PurchaseOrder>("update", "purchases", id, { status });
   },
-  receive: async (id: string, payload?: { serialsByItem?: string[][] }) => {
+  receive: async (id: string, payload?: { serialsByItem?: string[][]; lotNumber?: string }) => {
     const po = await call<PurchaseOrder | null>("get", "purchases", id);
     if (!po) throw new Error("Purchase order not found");
     if (po.status !== "ordered" && po.status !== "draft") {
       throw new Error("Only ordered/draft POs can be received");
     }
+    const { getCylinderTracking } = await import("@/lib/settings.server");
+    const method = await getCylinderTracking();
     const products = await call<Product[]>("list", "products");
     let cylinders = await call<Cylinder[]>("list", "cylinders");
     const nextItems = [...po.items];
@@ -843,12 +959,35 @@ export const purchaseService = {
       const item = nextItems[i];
       const p = products.find((x) => x.id === item.productId);
       if (!isCylinderProduct(p)) continue;
+      if (item.cylinderIds?.length === item.quantity) continue;
+      const ids: string[] = [];
+      const stamp = Date.now().toString(36);
+      if (method === "quantity" || method === "lot") {
+        if (method === "lot" && !payload?.lotNumber?.trim()) throw new Error("Lot number required");
+        for (let n = 0; n < item.quantity; n += 1) {
+          const serial = method === "lot"
+            ? `${payload!.lotNumber!.trim()}-${stamp}-${String(n + 1).padStart(3, "0")}`
+            : `QTY-${(p?.code || "CYL").replace(/\s+/g, "")}-${stamp}-${n + 1}`;
+          const created = await cylinderService.create({
+            serialNumber: serial,
+            productId: item.productId,
+            capacity: 0,
+            status: "in_transit",
+            location: po.supplierName,
+            lotNumber: payload?.lotNumber?.trim() || undefined,
+            ownedBy: "company",
+            skipIntakeMovement: true,
+          });
+          cylinders = [...cylinders, created];
+          ids.push(created.id);
+        }
+        nextItems[i] = { ...item, cylinderIds: ids };
+        continue;
+      }
       const serials = (payload?.serialsByItem?.[i] || []).map((s) => s.trim()).filter(Boolean);
-      if (serials.length === 0 && item.cylinderIds?.length === item.quantity) continue;
       if (serials.length !== item.quantity) {
         throw new Error(`Enter ${item.quantity} serial number(s) for ${item.productName}`);
       }
-      const ids: string[] = [];
       const seen = new Set<string>();
       for (const serial of serials) {
         const key = serial.toLowerCase();
@@ -862,14 +1001,15 @@ export const purchaseService = {
             capacity: 0,
             status: "in_transit",
             location: po.supplierName,
+            skipIntakeMovement: true,
           });
           cylinders = [...cylinders, found];
         } else {
           if (found.productId !== item.productId) {
             throw new Error(`Cylinder ${serial} does not match ${item.productName}`);
           }
-          if (found.status === "in_stock") {
-            throw new Error(`${serial} is already in warehouse`);
+          if (found.status === "in_stock" || found.status === "at_customer" || found.ownedBy === "customer") {
+            throw new Error(`${serial} is already assigned`);
           }
         }
         ids.push(found.id);
@@ -967,17 +1107,19 @@ export const inventoryService = {
         by: by || "Warehouse",
       });
     }
-    await call("create", "stockMovements", undefined, {
-      date: new Date().toISOString(),
-      productId: product.id,
-      productName: product.name,
-      type: "in",
-      quantity,
-      balanceAfter: product.stock,
-      refType: "refill",
-      notes: `Refill complete × ${quantity}`,
-      by: by || "Warehouse",
-    });
+    if (!isCylinderProduct(product)) {
+      await call("create", "stockMovements", undefined, {
+        date: new Date().toISOString(),
+        productId: product.id,
+        productName: product.name,
+        type: "in",
+        quantity,
+        balanceAfter: product.stock,
+        refType: "refill",
+        notes: `Refill complete × ${quantity}`,
+        by: by || "Warehouse",
+      });
+    }
   },
   sendToSupplier: async (data: {
     supplierId: string;
@@ -998,6 +1140,7 @@ export const inventoryService = {
       .filter((c) =>
         c.productId === data.productId
         && !c.supplierId
+        && !issueLockIsActive(c.issueLock)
         && c.status !== "at_customer"
         && c.status !== "damaged"
         && c.status !== "lost"
@@ -1005,9 +1148,13 @@ export const inventoryService = {
       )
       .sort((a, b) => a.lastMovementAt.localeCompare(b.lastMovementAt));
     if (pool.length < qty) throw new Error(`Only ${pool.length} empty cylinder(s) available to send`);
+    const chosen = pool.slice(0, qty);
+    const claimedIds = chosen.map((c) => c.id);
+    await claimCylinderIds(claimedIds, ["in_stock", "refilling", "in_transit"]);
     const expectedReturnAt = data.expectedReturnDate || undefined;
     const when = data.date ? new Date(`${data.date}T12:00:00`).toISOString() : new Date().toISOString();
-    for (const c of pool.slice(0, qty)) {
+    await afterCylinderClaim(claimedIds, async () => {
+    for (const c of chosen) {
       await cylinderService.addMovement({
         cylinderId: c.id,
         type: "transferred",
@@ -1030,6 +1177,7 @@ export const inventoryService = {
       refType: "refill",
       notes: `Sent to ${supplier.name} × ${qty}${data.notes ? ` · ${data.notes}` : ""}`,
       by: "Warehouse",
+    });
     });
   },
   receiveFromSupplier: async (data: {
@@ -1118,14 +1266,43 @@ export const inventoryService = {
     }
     const penalty = Number(data.penaltyAmount) || 0;
     if (penalty > 0 && data.accountingTreatment === "charge") {
-      await postLedger({
-        date: data.lostDate ? new Date(`${data.lostDate}T12:00:00`).toISOString() : new Date().toISOString(),
-        account: "cash",
-        direction: "in",
-        amount: penalty,
-        category: "receipt",
-        notes: `Lost cylinder penalty · ${party.name} · ${product.name}`,
-      });
+      const now = data.lostDate ? new Date(`${data.lostDate}T12:00:00`).toISOString() : new Date().toISOString();
+      if (data.partyKind === "customer") {
+        await call("create", "sales", undefined, {
+          orderNo: genOrderNo("SO"),
+          customerId: data.partyId,
+          customerName: party.name,
+          date: now,
+          items: [{
+            productId: product.id,
+            productName: `Lost cylinder penalty · ${product.name}`,
+            quantity: 1,
+            price: penalty,
+            taxRate: 0,
+            sellCylinder: false,
+          }],
+          subtotal: penalty,
+          tax: 0,
+          total: penalty,
+          paid: 0,
+          status: "invoiced",
+          notes: data.reason?.trim() || `Lost cylinder penalty · ${product.name}`,
+          createdAt: now,
+        });
+      } else {
+        await call("create", "vouchers", undefined, {
+          voucherNo: genOrderNo("JV"),
+          type: "journal",
+          date: now,
+          account: "adjustment",
+          amount: penalty,
+          partyType: "supplier",
+          partyId: data.partyId,
+          partyName: party.name,
+          notes: data.reason?.trim() || `Lost cylinder charge · ${product.name}`,
+          createdAt: now,
+        });
+      }
     } else if (penalty > 0 && data.accountingTreatment === "writeoff") {
       await postLedger({
         date: new Date().toISOString(),
@@ -1183,7 +1360,7 @@ export const inventoryService = {
       } else {
         await cylinderService.addMovement({
           cylinderId: c.id,
-          type: "damaged",
+          type: action === "scrap" ? "scrapped" : "written_off",
           fromLocation: "Damaged",
           toLocation: action === "scrap" ? "Scrap" : "Write-off",
           notes: notes?.trim() || `${action} · ${product.name}`,
@@ -1202,20 +1379,77 @@ export const inventoryService = {
     if (qty <= 0) throw new Error("Quantity must be positive");
     const cylinders = await call<Cylinder[]>("list", "cylinders");
     const pool = cylinders
-      .filter((c) => c.productId === data.productId && c.status === "at_customer" && c.customerId === data.customerId && c.ownedBy !== "customer")
+      .filter((c) => c.productId === data.productId && c.status === "at_customer" && c.customerId === data.customerId && c.ownedBy !== "customer" && !issueLockIsActive(c.issueLock))
       .sort((a, b) => a.lastMovementAt.localeCompare(b.lastMovementAt));
     if (pool.length < qty) throw new Error(`Only ${pool.length} cylinder(s) with this customer`);
-    for (const c of pool.slice(0, qty)) {
+    const chosen = pool.slice(0, qty);
+    const claimedIds = chosen.map((c) => c.id);
+    await claimCylinderIds(claimedIds, ["at_customer"]);
+    const priorMoves = await call<CylinderMovement[]>("list", "movements");
+    await afterCylinderClaim(claimedIds, async () => {
+    for (const c of chosen) {
+      const loaned = lastCustomerPurpose(priorMoves, c.id, customer.id) === "loan";
       await cylinderService.addMovement({
         cylinderId: c.id,
         type: "returned",
         customerId: customer.id,
         fromLocation: customer.name,
         toLocation: "Warehouse",
-        notes: data.notes?.trim() || `Return empty only · ${product.name}`,
+        notes: data.notes?.trim() || (loaned ? `Loan return · ${product.name}` : `Return empty only · ${product.name}`),
         by: "Warehouse",
-        purpose: "return",
+        purpose: loaned ? "loan_return" : "return",
       });
+    }
+    });
+  },
+  exchangeWithCustomer: async (data: { customerId: string; productId: string; quantity: number; lotNumber?: string; expectedReturnDate?: string; notes?: string }) => {
+    const product = await call<Product | null>("get", "products", data.productId);
+    if (!product) throw new Error("Product not found");
+    const customer = await call<Customer | null>("get", "customers", data.customerId);
+    if (!customer) throw new Error("Customer not found");
+    const qty = Number(data.quantity);
+    if (qty <= 0) throw new Error("Quantity must be positive");
+    if (!data.expectedReturnDate) throw new Error("Expected return date is required");
+    const cylinders = await call<Cylinder[]>("list", "cylinders");
+    const empties = cylinders
+      .filter((c) => c.productId === data.productId && c.status === "at_customer" && c.customerId === customer.id && c.ownedBy !== "customer" && !issueLockIsActive(c.issueLock))
+      .sort((a, b) => a.lastMovementAt.localeCompare(b.lastMovementAt));
+    if (empties.length < qty) throw new Error(`Only ${empties.length} empty cylinder(s) with this customer to exchange`);
+    const back = empties.slice(0, qty);
+    const claimedIds = back.map((c) => c.id);
+    await claimCylinderIds(claimedIds, ["at_customer"]);
+    try {
+    for (const c of back) {
+      await cylinderService.addMovement({
+        cylinderId: c.id,
+        type: "returned",
+        customerId: customer.id,
+        fromLocation: customer.name,
+        toLocation: "Warehouse",
+        notes: data.notes?.trim() || `Exchange return · ${product.name}`,
+        by: "Warehouse",
+        purpose: "exchange_in",
+      });
+    }
+    const fulls = await takeWarehouseFull(data.productId, qty, data.lotNumber);
+    claimedIds.push(...fulls.map((c) => c.id));
+    for (const c of fulls) {
+      await cylinderService.addMovement({
+        cylinderId: c.id,
+        type: "issued",
+        customerId: customer.id,
+        fromLocation: "Warehouse",
+        toLocation: customer.name,
+        notes: data.notes?.trim() || `Exchange issue · ${product.name}`,
+        by: "Warehouse",
+        purpose: "exchange_out",
+        expectedReturnAt: data.expectedReturnDate,
+        lotNumber: data.lotNumber,
+      });
+    }
+    } catch (err) {
+      await releaseIssueLocks(claimedIds);
+      throw err;
     }
   },
   loanToCustomer: async (data: {
@@ -1232,7 +1466,10 @@ export const inventoryService = {
     if (!customer) throw new Error("Customer not found");
     const qty = Number(data.quantity);
     if (qty <= 0) throw new Error("Quantity must be positive");
+    if (!data.expectedReturnDate) throw new Error("Expected return date is required");
     const pool = await takeWarehouseFull(data.productId, qty);
+    const claimedIds = pool.slice(0, qty).map((c) => c.id);
+    await afterCylinderClaim(claimedIds, async () => {
     for (const c of pool.slice(0, qty)) {
       await cylinderService.addMovement({
         cylinderId: c.id,
@@ -1243,18 +1480,22 @@ export const inventoryService = {
         notes: data.notes?.trim() || `Loan · ${product.name}`,
         by: "Warehouse",
         purpose: "loan",
-        expectedReturnAt: data.expectedReturnDate || undefined,
+        expectedReturnAt: data.expectedReturnDate,
       });
     }
+    });
   },
-  sendToCustomer: async (data: { customerId: string; productId: string; quantity: number; lotNumber?: string; notes?: string }) => {
+  sendToCustomer: async (data: { customerId: string; productId: string; quantity: number; lotNumber?: string; notes?: string; expectedReturnDate?: string }) => {
     const product = await call<Product | null>("get", "products", data.productId);
     if (!product) throw new Error("Product not found");
     const customer = await call<Customer | null>("get", "customers", data.customerId);
     if (!customer) throw new Error("Customer not found");
     const qty = Number(data.quantity);
     if (qty <= 0) throw new Error("Quantity must be positive");
+    if (!data.expectedReturnDate) throw new Error("Expected return date is required");
     const pool = await takeWarehouseFull(data.productId, qty, data.lotNumber);
+    const claimedIds = pool.map((c) => c.id);
+    await afterCylinderClaim(claimedIds, async () => {
     for (const c of pool) {
       await cylinderService.addMovement({
         cylinderId: c.id,
@@ -1266,8 +1507,10 @@ export const inventoryService = {
         by: "Warehouse",
         purpose: "sent",
         lotNumber: data.lotNumber,
+        expectedReturnAt: data.expectedReturnDate,
       });
     }
+    });
   },
   sellCylinders: async (data: { customerId: string; productId: string; quantity: number; notes?: string }) => {
     const product = await call<Product | null>("get", "products", data.productId);
@@ -1277,18 +1520,56 @@ export const inventoryService = {
     const qty = Number(data.quantity);
     if (qty <= 0) throw new Error("Quantity must be positive");
     const pool = await takeWarehouseFull(data.productId, qty);
-    for (const c of pool.slice(0, qty)) {
+    const soldIds = pool.slice(0, qty).map((c) => c.id);
+    const price = Number(product.price) || 0;
+    const total = price * qty;
+    const now = new Date().toISOString();
+    const orderNo = genOrderNo("SO");
+    const items = [{
+      productId: product.id,
+      productName: product.name,
+      quantity: qty,
+      price,
+      taxRate: 0,
+      sellCylinder: true,
+      cylinderIds: soldIds,
+    }];
+    let createdSaleId: string | undefined;
+    try {
+    const created = await call<SalesOrder>("create", "sales", undefined, {
+      orderNo,
+      customerId: customer.id,
+      customerName: customer.name,
+      date: now,
+      items,
+      subtotal: total,
+      tax: 0,
+      total,
+      paid: 0,
+      status: "invoiced",
+      notes: data.notes?.trim() || `Cylinder sale · ${product.name}`,
+      createdAt: now,
+    });
+    createdSaleId = created.id;
+    for (const cid of soldIds) {
       await cylinderService.addMovement({
-        cylinderId: c.id,
+        cylinderId: cid,
         type: "issued",
         customerId: customer.id,
         fromLocation: "Warehouse",
         toLocation: customer.name,
-        notes: data.notes?.trim() || `Cylinder sale · ${product.name}`,
+        notes: data.notes?.trim() || `Cylinder sale · ${product.name} · ${orderNo}`,
         by: "Warehouse",
         purpose: "sale",
         sold: true,
       });
+    }
+    } catch (err) {
+      await releaseIssueLocks(soldIds);
+      if (createdSaleId) {
+        try { await call("remove", "sales", createdSaleId); } catch { /* compensating this attempt only */ }
+      }
+      throw err;
     }
   },
   adjust: async (productId: string, quantity: number, type: "in" | "out" | "adjust", notes?: string) => {
@@ -1350,18 +1631,22 @@ export const inventoryService = {
           });
         }
       } else {
-        const ids = pickFifo(cylinders, productId, -delta);
+        const ids = pickFifo(cylinders.filter((c) => !issueLockIsActive(c.issueLock)), productId, -delta);
         if (ids.length < -delta) throw new Error(`Only ${ids.length} full cylinder(s) available to decrease`);
+        await claimCylinderIds(ids, ["in_stock", "in_transit"]);
+        await afterCylinderClaim(ids, async () => {
         for (const cid of ids) {
           await cylinderService.addMovement({
             cylinderId: cid,
-            type: "lost",
+            type: "stock_out",
             fromLocation: "Warehouse",
-            toLocation: "Adjustment",
+            toLocation: "Stock Out",
             notes: `Stock adjustment ${refId}`,
             by: meta.by || "Warehouse",
+            purpose: "stock_out",
           });
         }
+        });
       }
     }
   },

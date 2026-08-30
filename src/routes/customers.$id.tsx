@@ -14,7 +14,8 @@ import {
 } from "@/components/ui/table";
 import { formatCurrency, formatDate, formatOpenedOn } from "@/utils/formatters";
 import { customerOpeningSigned } from "@/lib/customer-balance";
-import { customerCylinderBalance, customerCylinderHistory } from "@/lib/customer-cylinders";
+import { customerCylinderHistory } from "@/lib/customer-cylinders";
+import { getCylinderAccountabilityFn } from "@/lib/cylinder.functions";
 import { useT } from "@/i18n";
 
 export const Route = createFileRoute("/customers/$id")({
@@ -41,6 +42,10 @@ function CustomerDetailBody() {
   const { data: cylinders = [] } = useQuery({ queryKey: ["cylinders"], queryFn: cylinderService.list });
   const { data: movements = [] } = useQuery({ queryKey: ["cylinderMovements"], queryFn: cylinderService.listMovements });
   const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: productService.list });
+  const { data: cylAcc } = useQuery({
+    queryKey: ["cylAccountability", "customer", id],
+    queryFn: () => getCylinderAccountabilityFn({ data: { kind: "customer", partyId: id } }),
+  });
 
   const remove = useMutation({
     mutationFn: () => customerService.remove(id),
@@ -56,7 +61,7 @@ function CustomerDetailBody() {
   if (isFetched && !c) return <div className="p-6 text-sm text-destructive">{t("customers.notFound")}</div>;
   if (!c) return null;
 
-  const cylBal = customerCylinderBalance(id, cylinders, movements);
+  const cylBal = cylAcc?.parties[0] ?? { sent: 0, returned: 0, remaining: 0, overdue: 0, lost: 0, damaged: 0, missingMoves: 0 };
   const cylHist = customerCylinderHistory(id, cylinders, movements, products);
 
   return (
@@ -114,6 +119,10 @@ function CustomerDetailBody() {
         <Info label={t("customers.cylOverdue")} value={String(cylBal.overdue)} />
         <Info label={t("customers.cylLost")} value={String(cylBal.lost)} />
         <Info label={t("customers.cylDamaged")} value={String(cylBal.damaged)} />
+        <p className="md:col-span-2 text-xs text-muted-foreground">{t("customers.cylRemainingHint")}</p>
+        {(cylBal.missingMoves || 0) > 0 && (
+          <p className="md:col-span-2 text-xs text-amber-700 dark:text-amber-400">{t("customers.cylMissingMoves")}</p>
+        )}
       </CardContent></Card>
 
       <Card className="mt-4">
@@ -130,6 +139,7 @@ function CustomerDetailBody() {
                     <TableHead>{t("common.type")}</TableHead>
                     <TableHead className="text-right">{t("customers.cylSent")}</TableHead>
                     <TableHead className="text-right">{t("customers.cylReturned")}</TableHead>
+                    <TableHead className="text-right">{t("customers.cylLost")}</TableHead>
                     <TableHead className="text-right">{t("customers.cylBalance")}</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -143,6 +153,7 @@ function CustomerDetailBody() {
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{row.sent || "—"}</TableCell>
                       <TableCell className="text-right tabular-nums">{row.returned || "—"}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.lost || "—"}</TableCell>
                       <TableCell className="text-right tabular-nums font-medium">{row.remaining}</TableCell>
                     </TableRow>
                   ))}

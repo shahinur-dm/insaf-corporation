@@ -1,7 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getDb } from "./mongo.server";
 import { allSeed } from "./seed-data";
-import { requireUser } from "./session.server";
+import { isDemoLoginEnabled, requireUser } from "./session.server";
+import { issueLockExpiredBefore } from "./cylinder-lock";
+import { isKnownCrudCollection, modulesForCrud } from "./crud-access";
+import { normalizeSerialKey, trackingEnforcesSerialUnique } from "./cylinder-serial";
 import type {
   Customer, Supplier, Product, SalesOrder, DashboardStats, StockAlert,
   Expense, LedgerEntry, Cylinder, PurchaseOrder, Voucher, Account, Delivery,
@@ -29,9 +32,11 @@ async function ensureSeeded() {
     const db = await getDb();
     const collections = Object.keys(allSeed) as CollName[];
     for (const name of collections) {
+      if (name === "appUsers" && !isDemoLoginEnabled()) continue;
       const coll = db.collection(name);
       // Unique index on business `id` prevents duplicate seed rows across races.
       try { await coll.createIndex({ id: 1 }, { unique: true }); } catch {}
+      if (name === "cylinders") await ensureCylinderSerialIndex(db);
       const count = await coll.estimatedDocumentCount();
       if (count === 0) {
         const docs = (allSeed as any)[name] as any[];
@@ -58,16 +63,73 @@ async function collGet<T>(name: CollName, id: string): Promise<T | null> {
   return doc ? clean<T>(doc) : null;
 }
 
+async function ensureCylinderSerialIndex(db?: Awaited<ReturnType<typeof getDb>>) {
+  const database = db ?? await getDb();
+  try {
+    await database.collection("cylinders").createIndex(
+      { serialKey: 1 },
+      {
+        unique: true,
+        name: "cylinders_serialKey_unique",
+        partialFilterExpression: { serialKey: { $type: "string", $gt: "" } },
+      },
+    );
+  } catch {
+    /* Existing duplicate serials are left in place; new serial-mode writes still hit E11000 if the index exists. */
+  }
+}
+
+function isDuplicateKeyError(e: unknown) {
+  const err = e as { code?: number; message?: string };
+  return err?.code === 11000 || /E11000|duplicate key/i.test(err?.message || "");
+}
+
+async function serialTaken(serial: string, excludeId?: string) {
+  const key = normalizeSerialKey(serial);
+  if (!key) return false;
+  const db = await getDb();
+  const docs = await db.collection("cylinders").find(
+    excludeId ? { id: { $ne: excludeId } } : {},
+    { projection: { id: 1, serialNumber: 1, serialKey: 1 } },
+  ).toArray();
+  return docs.some((d) => {
+    const stored = typeof d.serialKey === "string" && d.serialKey ? d.serialKey : normalizeSerialKey(d.serialNumber);
+    return stored === key;
+  });
+}
+
 async function collCreate<T extends { id?: string }>(name: CollName, data: any): Promise<T> {
   const db = await getDb();
   await ensureSeeded();
   const id = data.id ?? Math.random().toString(36).slice(2, 10);
-  const doc = {
+  const doc: Record<string, unknown> = {
     ...data,
     id,
     createdAt: data.createdAt ?? new Date().toISOString(),
   };
-  await db.collection(name).insertOne(doc);
+  if (name === "cylinders") {
+    await ensureCylinderSerialIndex(db);
+    const { getCylinderTracking } = await import("./settings.server");
+    const method = await getCylinderTracking();
+    const serial = String(data?.serialNumber || "");
+    if (trackingEnforcesSerialUnique(method)) {
+      const serialKey = normalizeSerialKey(serial);
+      if (serialKey && await serialTaken(serial)) {
+        throw new Error(`Serial number ${serial} is already assigned`);
+      }
+      if (serialKey) doc.serialKey = serialKey;
+    } else {
+      delete doc.serialKey;
+    }
+  }
+  try {
+    await db.collection(name).insertOne(doc);
+  } catch (e) {
+    if (name === "cylinders" && isDuplicateKeyError(e)) {
+      throw new Error(`Serial number ${data?.serialNumber} is already assigned`);
+    }
+    throw e;
+  }
   return clean<T>(doc);
 }
 
@@ -77,13 +139,67 @@ async function collUpdate<T>(name: CollName, id: string, patch: any): Promise<T>
   if (!id) throw new Error("Missing record id");
   if (!patch || typeof patch !== "object") throw new Error("Missing update payload");
   const { _id, id: _ignore, createdAt: _createdAt, ...rest } = patch;
-  const result = await db.collection(name).updateOne({ id: String(id) }, { $set: rest });
-  if (result.matchedCount === 0) {
-    throw new Error(`Record not found (${name}/${id})`);
+  const update: { $set: Record<string, unknown>; $unset?: Record<string, string> } = { $set: rest };
+  if (name === "cylinders" && rest.serialNumber != null) {
+    await ensureCylinderSerialIndex(db);
+    const { getCylinderTracking } = await import("./settings.server");
+    const method = await getCylinderTracking();
+    if (trackingEnforcesSerialUnique(method)) {
+      if (await serialTaken(String(rest.serialNumber), String(id))) {
+        throw new Error(`Serial number ${rest.serialNumber} is already assigned`);
+      }
+      const serialKey = normalizeSerialKey(String(rest.serialNumber));
+      if (serialKey) rest.serialKey = serialKey;
+      else {
+        delete rest.serialKey;
+        update.$unset = { ...(update.$unset || {}), serialKey: "" };
+      }
+    } else {
+      delete rest.serialKey;
+      update.$unset = { ...(update.$unset || {}), serialKey: "" };
+    }
+  }
+  try {
+    const result = await db.collection(name).updateOne({ id: String(id) }, update);
+    if (result.matchedCount === 0) {
+      throw new Error(`Record not found (${name}/${id})`);
+    }
+  } catch (e) {
+    if (name === "cylinders" && isDuplicateKeyError(e)) {
+      throw new Error(`Serial number ${rest.serialNumber} is already assigned`);
+    }
+    throw e;
   }
   const doc = await db.collection(name).findOne({ id: String(id) });
   if (!doc) throw new Error("Update failed — record missing after write");
   return clean<T>(doc);
+}
+
+async function collClaim(name: CollName, id: string, payload?: { statuses?: string[] }) {
+  if (name !== "cylinders") throw new Error("Claim is only supported for cylinders");
+  const statuses = payload?.statuses?.length ? payload.statuses : ["in_stock"];
+  const db = await getDb();
+  await ensureSeeded();
+  const staleBefore = issueLockExpiredBefore();
+  const result = await db.collection("cylinders").findOneAndUpdate(
+    {
+      id: String(id),
+      status: { $in: statuses },
+      $or: [
+        { issueLock: { $exists: false } },
+        { issueLock: null },
+        { issueLock: "" },
+        { issueLock: { $lt: staleBefore } },
+      ],
+    },
+    { $set: { issueLock: new Date().toISOString() } },
+    { returnDocument: "after" },
+  );
+  const doc = (result as { value?: unknown } | null)?.value ?? result;
+  if (!doc || typeof doc !== "object" || !("id" in doc)) {
+    throw new Error("Cylinder is no longer available");
+  }
+  return clean(doc);
 }
 
 async function collRemove(name: CollName, id: string): Promise<void> {
@@ -98,7 +214,7 @@ async function collRemove(name: CollName, id: string): Promise<void> {
 
 // ---------- Generic CRUD server functions ----------
 type CrudInput = {
-  op: "list" | "get" | "create" | "update" | "remove";
+  op: "list" | "get" | "create" | "update" | "remove" | "claim";
   coll: CollName;
   id?: string;
   /** Record body for create/update — avoid naming this `data` (conflicts with server-fn wrapper). */
@@ -108,7 +224,16 @@ type CrudInput = {
 export const crudFn = createServerFn({ method: "POST" })
   .inputValidator((d: CrudInput) => d)
   .handler(async ({ data }): Promise<any> => {
-    await requireUser();
+    const user = await requireUser();
+    if (!isKnownCrudCollection(data.coll)) {
+      throw new Error("Not allowed");
+    }
+    const { roleCanAccess } = await import("./settings.server");
+    if (user.role !== "Administrator") {
+      const needed = modulesForCrud(data.coll, data.op);
+      const ok = await Promise.all(needed.map((mod) => roleCanAccess(user.role, mod)));
+      if (!ok.some(Boolean)) throw new Error("Not allowed");
+    }
     const id = data.id != null ? String(data.id) : undefined;
     switch (data.op) {
       case "list": return await collAll(data.coll);
@@ -116,6 +241,7 @@ export const crudFn = createServerFn({ method: "POST" })
       case "create": return await collCreate(data.coll, data.payload);
       case "update": return await collUpdate(data.coll, id!, data.payload);
       case "remove": await collRemove(data.coll, id!); return { ok: true };
+      case "claim": return await collClaim(data.coll, id!, data.payload);
       default: return null;
     }
   });

@@ -27,6 +27,7 @@ import { useT } from "@/i18n";
 const statusVariant: Record<CylinderStatus, "default" | "secondary" | "destructive" | "outline"> = {
   in_stock: "default", at_customer: "secondary", in_transit: "outline",
   refilling: "outline", damaged: "destructive", lost: "destructive",
+  scrapped: "destructive", written_off: "destructive", stock_out: "outline",
 };
 
 export function CylinderRegistry() {

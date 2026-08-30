@@ -68,7 +68,7 @@ export const cylinderSchema = z.object({
   serialNumber: z.string().min(1),
   productId: z.string().min(1),
   capacity: z.coerce.number().min(0),
-  status: z.enum(["in_stock", "at_customer", "in_transit", "refilling", "damaged", "lost"]),
+  status: z.enum(["in_stock", "at_customer", "in_transit", "refilling", "damaged", "lost", "scrapped", "written_off", "stock_out"]),
   location: z.string().min(1),
   gasCategory: z.enum(["LPG", "Industrial", "Medical", "Other"]).optional(),
   customerId: z.string().optional(),

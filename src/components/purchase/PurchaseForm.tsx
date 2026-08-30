@@ -142,7 +142,7 @@ export function PurchaseForm({ id }: { id?: string }) {
             <h3 className="text-sm font-semibold">{t("sales.item")}</h3>
             <Button size="sm" variant="outline" onClick={addItem}><Plus className="mr-1 h-3 w-3" /> {t("common.addItem")}</Button>
           </div>
-          <div className="overflow-hidden rounded-md border">
+          <div className="overflow-x-auto rounded-md border">
             <Table>
               <TableHeader><TableRow>
                 <TableHead>{t("common.product")}</TableHead>

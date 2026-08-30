@@ -8,6 +8,7 @@ import { supplierService } from "@/services/supplier.service";
 import { accountingService } from "@/services/accounting.service";
 import { cylinderService } from "@/services/cylinder.service";
 import { isCylinderProduct } from "@/lib/cylinder-product";
+import { getCylinderTrackingFn } from "@/lib/settings.functions";
 import { ReceiveCylinderDialog } from "@/components/purchase/ReceiveCylinderDialog";
 import { formatCurrency, formatDate } from "@/utils/formatters";
 import { lineAmount, paymentStatus } from "@/utils/helpers";
@@ -27,14 +28,16 @@ import { PrintDocHeader } from "@/components/common/PrintDocHeader";
 import { PrintMeta, PrintSignatures, PrintTotals } from "@/components/common/PrintParts";
 import { PartyNameLink } from "@/components/common/PartyNameLink";
 import type { PaymentMethod, Voucher } from "@/types";
-import { useT } from "@/i18n";
+import { useT, type MessageKey } from "@/i18n";
 import { Printer, Trash2 } from "lucide-react";
 
 type PayChoice = "cash" | "bank" | "credit";
 
-function payStatusLabel(t: (key: string) => string, total: number, paid: number) {
+function payStatusLabel(t: (key: MessageKey) => string, total: number, paid: number) {
   const status = paymentStatus(total, paid);
-  return status === "unpaid" ? t("purchases.unpaid") : t(`sales.${status}`);
+  if (status === "paid") return t("sales.paid");
+  if (status === "partial") return t("sales.partial");
+  return t("purchases.unpaid");
 }
 
 export function PurchaseView({ id }: { id: string }) {
@@ -58,6 +61,7 @@ export function PurchaseView({ id }: { id: string }) {
   const [receiveOpen, setReceiveOpen] = useState(false);
   const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: productService.list });
   const { data: cylinders = [] } = useQuery({ queryKey: ["cylinders"], queryFn: cylinderService.list });
+  const { data: tracking = "serial" } = useQuery({ queryKey: ["cylinderTracking"], queryFn: () => getCylinderTrackingFn() });
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["purchases"] });
@@ -72,7 +76,7 @@ export function PurchaseView({ id }: { id: string }) {
   };
 
   const receive = useMutation({
-    mutationFn: (serialsByItem?: string[][]) => purchaseService.receive(id, serialsByItem ? { serialsByItem } : undefined),
+    mutationFn: (payload?: { serialsByItem?: string[][]; lotNumber?: string }) => purchaseService.receive(id, payload),
     onSuccess: () => { setReceiveOpen(false); invalidate(); toast.success(t("purchases.received")); },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -109,7 +113,8 @@ export function PurchaseView({ id }: { id: string }) {
   const canDelete = po.status === "draft" || po.status === "cancelled";
   const needsCylinders = po.items.some((it) => isCylinderProduct(products.find((p) => p.id === it.productId)));
   const startReceive = () => {
-    if (needsCylinders) setReceiveOpen(true);
+    if (needsCylinders && tracking === "serial") setReceiveOpen(true);
+    else if (needsCylinders && tracking === "lot") setReceiveOpen(true);
     else receive.mutate(undefined);
   };
   const serialsOf = (ids?: string[]) =>
@@ -400,7 +405,7 @@ export function PurchaseView({ id }: { id: string }) {
         open={receiveOpen}
         onOpenChange={setReceiveOpen}
         pending={receive.isPending}
-        onReceive={(serialsByItem) => receive.mutate(serialsByItem)}
+        onReceive={(payload) => receive.mutate(payload)}
       />
     </div>
   );

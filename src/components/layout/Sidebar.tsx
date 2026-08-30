@@ -1,7 +1,7 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
-  LayoutDashboard, Users, Truck, Package, ShoppingCart, Cylinder, ClipboardList,
-  Receipt, Warehouse, BookOpen, UserCog, BarChart3, ShoppingBag, Settings,
+  LayoutDashboard, Users, Truck, Package, ShoppingCart, ClipboardList,
+  Receipt, Warehouse, BookOpen, UserCog, BarChart3, ShoppingBag, Settings, Cylinder,
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
@@ -14,7 +14,7 @@ import { useT, type MessageKey } from "@/i18n";
 export function AppSidebar() {
   const t = useT();
   const pathname = useRouterState({ select: (r) => r.location.pathname });
-  const { canAccessUrl, isLoading } = useModuleAccess();
+  const { canAccessUrl } = useModuleAccess();
   const isActive = (url: string) => {
     if (url === "/") return pathname === "/";
     if (url === "/hr") return pathname === "/hr" || pathname === "/hr/";
@@ -68,7 +68,7 @@ export function AppSidebar() {
   const visibleGroups = groups
     .map((g) => ({
       ...g,
-      items: isLoading ? g.items : g.items.filter((item) => canAccessUrl(item.url)),
+      items: g.items.filter((item) => canAccessUrl(item.url)),
     }))
     .filter((g) => g.items.length > 0);
 

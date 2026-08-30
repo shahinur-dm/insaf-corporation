@@ -28,7 +28,8 @@ import { cylinderService } from "@/services/cylinder.service";
 import { deliveryService } from "@/services/delivery.service";
 import { inventoryService } from "@/services/inventory.service";
 import { buildProductInventory } from "@/lib/cylinder-inventory";
-import { isCylinderMovementOnly, isCylinderSaleLine, lineFromProduct } from "@/lib/cylinder-product";
+import { isCylinderMovementOnly, isCylinderProduct, isCylinderSaleLine, lineFromProduct } from "@/lib/cylinder-product";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export function SalesOrderForm({
   mode = "order",
@@ -62,6 +63,7 @@ export function SalesOrderForm({
   const [receiverName, setReceiverName] = useState("");
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState<LineItem[]>([]);
+  const [sellGasOnly, setSellGasOnly] = useState(false);
   const [hydrated, setHydrated] = useState(!editing);
 
   useEffect(() => {
@@ -83,10 +85,12 @@ export function SalesOrderForm({
     setItems(items.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
   };
 
-  const billedItems = items.map((it) => {
-    const p = products.find((x) => x.id === it.productId);
-    return isCylinderMovementOnly(it, p) ? { ...it, price: 0 } : it;
-  });
+  const billedItems = items
+    .filter((it) => !sellGasOnly || !isCylinderProduct(products.find((p) => p.id === it.productId)))
+    .map((it) => {
+      const p = products.find((x) => x.id === it.productId);
+      return isCylinderMovementOnly(it, p) ? { ...it, price: 0 } : it;
+    });
   const totals = computeTotals(billedItems);
 
   const mutation = useMutation({
@@ -97,7 +101,11 @@ export function SalesOrderForm({
       if (!parsed.success) throw new Error(parsed.error.errors[0]?.message || "Invalid form");
       const customer = customers.find((c) => c.id === customerId);
       if (!customer) throw new Error(t("common.select"));
-      for (const it of items) {
+      const workingItems = sellGasOnly
+        ? items.filter((it) => !isCylinderProduct(products.find((p) => p.id === it.productId)))
+        : items;
+      if (workingItems.length === 0) throw new Error(t("common.noItems"));
+      for (const it of workingItems) {
         const row = stockRows.find((r) => r.productId === it.productId);
         if (row && it.quantity > row.available) {
           throw new Error(t("sales.stockWarn", { qty: row.available }));
@@ -108,7 +116,7 @@ export function SalesOrderForm({
         if (existing.status === "cancelled") {
           throw new Error(t("sales.cannotEdit"));
         }
-        const nextItems = items.map((it) => {
+        const nextItems = workingItems.map((it) => {
           const p = products.find((x) => x.id === it.productId);
           const movementOnly = isCylinderMovementOnly(it, p);
           return {
@@ -135,7 +143,7 @@ export function SalesOrderForm({
         orderNo: genOrderNo(mode === "quotation" ? "QT" : "SO"),
         customerId, customerName: customer.name,
         date: new Date().toISOString(),
-        items: items.map((it) => {
+        items: workingItems.map((it) => {
           const p = products.find((x) => x.id === it.productId);
           const movementOnly = isCylinderMovementOnly(it, p);
           return {
@@ -217,6 +225,11 @@ export function SalesOrderForm({
             <Label>{t("common.notes")}</Label>
             <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t("common.optionalNotes")} />
           </div>
+          <label className="md:col-span-2 flex items-center gap-2 text-sm">
+            <Checkbox checked={sellGasOnly} onCheckedChange={(v) => setSellGasOnly(v === true)} />
+            <span>{t("sales.sellGasOnly")}</span>
+            <span className="text-xs text-muted-foreground">{t("sales.sellGasOnlyHint")}</span>
+          </label>
         </div>
 
         <div>

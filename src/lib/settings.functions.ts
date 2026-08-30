@@ -25,14 +25,8 @@ export const saveCylinderTrackingFn = createServerFn({ method: "POST" })
 export const getPowerMatrixFn = createServerFn({ method: "POST" }).handler(async (): Promise<PowerMatrix> => {
   const { requireUser } = await import("./session.server");
   const { getPowerMatrix } = await import("./settings.server");
-  try {
-    await requireUser();
-    return await getPowerMatrix();
-  } catch (e) {
-    if (e instanceof Error && e.message === "Unauthorized") throw e;
-    const { defaultMatrix } = await import("./settings-store");
-    return defaultMatrix();
-  }
+  await requireUser();
+  return getPowerMatrix();
 });
 
 export const savePowerMatrixFn = createServerFn({ method: "POST" })

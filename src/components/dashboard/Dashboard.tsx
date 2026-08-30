@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useRouteContext } from "@tanstack/react-router";
 import { salesService } from "@/services/sales.service";
 import { expenseService } from "@/services/expense.service";
-import { cylinderService } from "@/services/cylinder.service";
 import { StatCard } from "./widgets/StatCard";
 import { StockAlerts } from "./widgets/StockAlert";
 import { DateRangeFilter } from "@/components/common/DateRangeFilter";
@@ -15,11 +14,7 @@ import {
 } from "lucide-react";
 import { useT } from "@/i18n";
 import { EMPTY_DATE_RANGE, filterByDateRange, type DateRange } from "@/lib/date-range";
-import { companyOwnedLocations, cylinderOverviewCounts } from "@/lib/cylinder-product";
-import { buildCylinderOverdueRows } from "@/lib/cylinder-reports";
-import { customerService } from "@/services/customer.service";
-import { supplierService } from "@/services/supplier.service";
-import { productService } from "@/services/product.service";
+import { getCylinderAccountabilityFn } from "@/lib/cylinder.functions";
 
 export function Dashboard() {
   const t = useT();
@@ -49,16 +44,12 @@ export function Dashboard() {
     refetchOnMount: "always",
     staleTime: 0,
   });
-  const { data: cylinders = [] } = useQuery({
-    queryKey: ["cylinders"],
-    queryFn: cylinderService.list,
+  const { data: cylAcc } = useQuery({
+    queryKey: ["cylAccountability"],
+    queryFn: () => getCylinderAccountabilityFn({ data: {} }),
     refetchOnMount: "always",
     staleTime: 0,
   });
-  const { data: cylMoves = [] } = useQuery({ queryKey: ["cylinderMovements"], queryFn: cylinderService.listMovements });
-  const { data: customers = [] } = useQuery({ queryKey: ["customers"], queryFn: customerService.list });
-  const { data: suppliers = [] } = useQuery({ queryKey: ["suppliers"], queryFn: supplierService.list });
-  const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: productService.list });
 
   const s = data ?? {
     todaySales: 0, todayCollection: 0, todayExpense: 0,
@@ -81,14 +72,13 @@ export function Dashboard() {
   const periodCollection = filteredSales.reduce((a, o) => a + o.paid, 0);
   const periodExpense = filteredExpenses.reduce((a, o) => a + o.amount, 0);
 
-  const cylCounts = useMemo(() => cylinderOverviewCounts(cylinders), [cylinders]);
-  const owned = useMemo(() => companyOwnedLocations(cylinders), [cylinders]);
-  const overdue = useMemo(
-    () => buildCylinderOverdueRows({ cylinders, movements: cylMoves, products, customers, suppliers }),
-    [cylinders, cylMoves, products, customers, suppliers],
-  );
-  const customerOverdue = overdue.filter((r) => r.partyKind === "customer").reduce((a, r) => a + r.quantity, 0);
-  const supplierOverdue = overdue.filter((r) => r.partyKind === "supplier").reduce((a, r) => a + r.quantity, 0);
+  const owned = cylAcc?.snapshot ?? {
+    owned: 0, warehouse: 0, customers: 0, suppliers: 0, inRefill: 0, lost: 0, damaged: 0,
+    full: 0, empty: 0, total: 0, inTransit: 0, customerOverdue: 0, supplierOverdue: 0,
+  };
+  const cylCounts = { full: owned.full, empty: owned.empty, refillPending: owned.inRefill, inTransit: owned.inTransit };
+  const customerOverdue = owned.customerOverdue;
+  const supplierOverdue = owned.supplierOverdue;
 
   const greetingName = user?.displayName || "Operator";
 
@@ -175,7 +165,7 @@ export function Dashboard() {
         <StatCard title={t("cylinders.empty")} value={String(cylCounts.empty)} icon={Package} tone="info" to="/inventory" />
         </div>
         <div data-reveal>
-        <StatCard title={t("cylinders.refillPending")} value={String(cylCounts.refillPending)} icon={AlertTriangle} tone="warning" to="/inventory" />
+        <StatCard title={t("cylinders.refillPending")} value={String(owned.inRefill)} icon={AlertTriangle} tone="warning" to="/inventory" />
         </div>
         <div data-reveal>
         <StatCard title={t("cylinders.inTransit")} value={String(cylCounts.inTransit)} icon={Truck} to="/inventory" />
@@ -203,12 +193,9 @@ export function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
         <div data-reveal>
-          <StatCard title={t("dash.cylInRefill")} value={String(owned.inRefill)} icon={AlertTriangle} tone="warning" to="/inventory" />
-        </div>
-        <div data-reveal>
-          <StatCard title={t("dash.cylEmptyWh")} value={String(cylCounts.empty)} icon={Package} tone="info" to="/inventory" />
+          <StatCard title={t("inventory.totalCyl")} value={String(owned.owned)} icon={CylinderIcon} to="/inventory" />
         </div>
         <div data-reveal>
           <StatCard title={t("dash.cylOverdueCust")} value={String(customerOverdue)} icon={Users} tone="danger" to="/reports" />

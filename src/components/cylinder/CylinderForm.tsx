@@ -47,7 +47,7 @@ export function CylinderForm({ id }: { id?: string }) {
           gasCategory: existing.gasCategory || products.find((p) => p.id === existing.productId)?.category,
         }
       : undefined,
-    defaultValues: { status: "in_stock", location: "Warehouse A", capacity: 0 },
+    defaultValues: { status: "in_stock", location: "Warehouse", capacity: 0 },
   });
 
   const mutation = useMutation({
@@ -60,7 +60,8 @@ export function CylinderForm({ id }: { id?: string }) {
           } as never)
         : cylinderService.create({
             ...v,
-            fillLevel: v.status === "refilling" ? "empty" : "full",
+            status: "in_stock",
+            fillLevel: "full",
           } as never),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["cylinders"] });
@@ -100,9 +101,10 @@ export function CylinderForm({ id }: { id?: string }) {
             </Select>
           </Row>
           <Row label={t("cylinders.capacity")}><Input type="number" step="0.01" {...register("capacity")} /></Row>
+          {editing && (
           <Row label={t("common.status")}>
-            <Select value={watch("status")} onValueChange={(v) => setValue("status", v as FormValues["status"])}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+            <Select value={watch("status")} disabled>
+              <SelectTrigger disabled><SelectValue /></SelectTrigger>
               <SelectContent>
                 {(["in_stock", "at_customer", "in_transit", "refilling", "damaged", "lost"] as const).map((s) => (
                   <SelectItem key={s} value={s}>{t(`status.${s}` as any)}</SelectItem>
@@ -110,6 +112,7 @@ export function CylinderForm({ id }: { id?: string }) {
               </SelectContent>
             </Select>
           </Row>
+          )}
           <Row label={t("cylinders.location")} error={errors.location?.message} className="md:col-span-2">
             <Input {...register("location")} />
           </Row>

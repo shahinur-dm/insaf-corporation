@@ -15,7 +15,9 @@ function ModuleGate({ children }: { children: ReactNode }) {
   const pathname = useRouterState({ select: (r) => r.location.pathname });
   const { canAccessPath, isLoading } = useModuleAccess();
 
-  if (isLoading) return <>{children}</>;
+  if (isLoading) {
+    return <div className="p-6 text-sm text-muted-foreground">{t("common.loading")}</div>;
+  }
   if (canAccessPath(pathname)) return <>{children}</>;
 
   return (

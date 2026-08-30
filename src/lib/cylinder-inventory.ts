@@ -1,7 +1,7 @@
 import type { Cylinder, Delivery, Product, SalesOrder, StockMovement } from "@/types";
 import {
   cylinderAtCustomer, cylinderAtSupplier, cylinderIsEmpty, cylinderIsFullStock,
-  cylinderWarehouseEmpty, isCylinderProduct,
+  cylinderWarehouseEmpty, isCylinderProduct, isInactiveCompanyCylinder,
 } from "@/lib/cylinder-product";
 
 export type InventoryStockStatus = "normal" | "low" | "out";
@@ -79,7 +79,7 @@ export function buildProductInventory(
   movements: StockMovement[],
 ): ProductInventoryRow[] {
   return products.map((p, idx) => {
-    const all = cylinders.filter((c) => c.productId === p.id);
+    const all = cylinders.filter((c) => c.productId === p.id && !isInactiveCompanyCylinder(c));
     const isCyl = isCylinderProduct(p) || (p.productType !== "gas" && all.length > 0);
     const reserved = reservedQtyForProduct(p.id, sales, deliveries, movements);
     let total: number;
@@ -100,9 +100,7 @@ export function buildProductInventory(
       full = all.filter(cylinderIsFullStock).length;
       delivered = withCustomer;
       empty = all.filter(cylinderWarehouseEmpty).length;
-      refillPending = all.filter((c) =>
-        cylinderAtSupplier(c) || c.status === "refilling" || (cylinderWarehouseEmpty(c) && c.status === "in_stock"),
-      ).length;
+      refillPending = all.filter((c) => cylinderAtSupplier(c)).length;
     } else {
       total = Math.max(0, (p.stock || 0) + reserved);
       full = Math.max(0, p.stock || 0);

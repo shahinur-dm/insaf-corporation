@@ -37,14 +37,10 @@ async function ensureSettingsColl() {
 }
 
 export async function getPowerMatrix(): Promise<PowerMatrix> {
-  try {
-    const coll = await ensureSettingsColl();
-    const doc = await coll.findOne({ id: DOC_ID });
-    if (!doc?.matrix) return defaultMatrix();
-    return sanitizeMatrix(doc.matrix);
-  } catch {
-    return defaultMatrix();
-  }
+  const coll = await ensureSettingsColl();
+  const doc = await coll.findOne({ id: DOC_ID });
+  if (!doc?.matrix) return defaultMatrix();
+  return sanitizeMatrix(doc.matrix);
 }
 
 export async function savePowerMatrixDoc(matrix: PowerMatrix): Promise<PowerMatrix> {

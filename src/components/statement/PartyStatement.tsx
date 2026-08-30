@@ -46,15 +46,22 @@ export function PartyStatement({ kind, id }: { kind: PartyKind; id: string }) {
   const [range, setRange] = useState<DateRange>(EMPTY_DATE_RANGE);
   const [exporting, setExporting] = useState<"excel" | "pdf" | null>(null);
 
-  const partyQuery = useQuery({
-    queryKey: [kind === "customer" ? "customers" : kind === "supplier" ? "suppliers" : "employees", id],
-    queryFn: () =>
-      kind === "customer"
-        ? customerService.get(id)
-        : kind === "supplier"
-          ? supplierService.get(id)
-          : hrService.getEmployee(id),
+  const customerQuery = useQuery({
+    queryKey: ["customers", id],
+    queryFn: () => customerService.get(id),
+    enabled: kind === "customer",
   });
+  const supplierQuery = useQuery({
+    queryKey: ["suppliers", id],
+    queryFn: () => supplierService.get(id),
+    enabled: kind === "supplier",
+  });
+  const employeeQuery = useQuery({
+    queryKey: ["employees", id],
+    queryFn: () => hrService.getEmployee(id),
+    enabled: kind === "employee",
+  });
+  const partyQuery = kind === "customer" ? customerQuery : kind === "supplier" ? supplierQuery : employeeQuery;
   const { data: sales = [] } = useQuery({
     queryKey: ["sales"],
     queryFn: salesService.list,
@@ -75,17 +82,26 @@ export function PartyStatement({ kind, id }: { kind: PartyKind; id: string }) {
     queryFn: accountingService.listVouchers,
   });
 
-  const party = partyQuery.data;
+  const customer = customerQuery.data;
+  const supplier = supplierQuery.data;
+  const employee = employeeQuery.data;
+  const partyName =
+    kind === "customer" ? customer?.name : kind === "supplier" ? supplier?.name : employee?.name;
+  const partyPhone =
+    kind === "customer" ? customer?.phone : kind === "supplier" ? supplier?.phone : employee?.phone;
+  const partyAddress = kind === "customer" ? customer?.address : kind === "supplier" ? supplier?.address : undefined;
   const statement = useMemo(() => {
-    if (!party) return null;
     if (kind === "customer") {
-      return buildPartyStatement({ kind: "customer", party: party as never, sales, vouchers, range });
+      if (!customer) return null;
+      return buildPartyStatement({ kind: "customer", party: customer, sales, vouchers, range });
     }
     if (kind === "supplier") {
-      return buildPartyStatement({ kind: "supplier", party: party as never, purchases, vouchers, range });
+      if (!supplier) return null;
+      return buildPartyStatement({ kind: "supplier", party: supplier, purchases, vouchers, range });
     }
-    return buildPartyStatement({ kind: "employee", party: party as never, payroll, vouchers, range });
-  }, [kind, party, sales, purchases, payroll, vouchers, range]);
+    if (!employee) return null;
+    return buildPartyStatement({ kind: "employee", party: employee, payroll, vouchers, range });
+  }, [kind, customer, supplier, employee, sales, purchases, payroll, vouchers, range]);
 
   const monthGroups = useMemo(
     () => (kind === "employee" && statement ? groupStatementByMonth(statement.lines, locale) : []),
@@ -95,14 +111,14 @@ export function PartyStatement({ kind, id }: { kind: PartyKind; id: string }) {
   if (partyQuery.isLoading) {
     return <div className="p-6 text-sm text-muted-foreground">{t("common.loading")}</div>;
   }
-  if (partyQuery.isFetched && !party) {
+  if (partyQuery.isFetched && !partyName) {
     return (
       <div className="p-6 text-sm text-destructive">
         {kind === "customer" ? t("customers.notFound") : kind === "supplier" ? t("suppliers.notFound") : t("hr.notFound")}
       </div>
     );
   }
-  if (!party || !statement) return null;
+  if (!partyName || !statement) return null;
 
   const closingLabel = kind === "customer"
     ? (statement.closingBalance >= 0 ? t("statement.receivable") : t("statement.advance"))
@@ -159,10 +175,10 @@ export function PartyStatement({ kind, id }: { kind: PartyKind; id: string }) {
   return (
     <div>
       <PageHeader
-        title={`${pageTitle} — ${party.name}`}
+        title={`${pageTitle} — ${partyName}`}
         description={kind === "employee" ? t("statement.desc") : t("statement.ledgerDesc")}
         backTo={backTo}
-        backLabel={party.name}
+        backLabel={partyName}
         actions={
           <div className="no-print flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => window.print()}>
@@ -193,9 +209,9 @@ export function PartyStatement({ kind, id }: { kind: PartyKind; id: string }) {
             subtitle={`${t("statement.period")}: ${period}`}
             right={
               <div className="text-sm text-right">
-                <p className="font-display text-base font-semibold">{party.name}</p>
-                <p className="text-muted-foreground">{party.phone}</p>
-                {party.address && <p className="max-w-xs text-muted-foreground">{party.address}</p>}
+                <p className="font-display text-base font-semibold">{partyName}</p>
+                <p className="text-muted-foreground">{partyPhone}</p>
+                {partyAddress && <p className="max-w-xs text-muted-foreground">{partyAddress}</p>}
               </div>
             }
           />

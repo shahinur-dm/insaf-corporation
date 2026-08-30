@@ -53,11 +53,12 @@ export function ExpenseList() {
   const startEdit = (row: Expense) => {
     setEditingId(row.id);
     setOpen(true);
+    const paymentMethod: FormValues["paymentMethod"] = row.paymentMethod === "bank" ? "bank" : "cash";
     reset({
       category: row.category,
       description: row.description,
       amount: row.amount,
-      paymentMethod: row.paymentMethod === "bank" || row.paymentMethod === "cash" ? row.paymentMethod : "cash",
+      paymentMethod,
       date: row.date.slice(0, 10),
     });
   };

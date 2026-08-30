@@ -73,7 +73,7 @@ export interface LayerConsumption {
   unitCost: number;
 }
 
-export type CylinderStatus = "in_stock" | "at_customer" | "in_transit" | "refilling" | "damaged" | "lost";
+export type CylinderStatus = "in_stock" | "at_customer" | "in_transit" | "refilling" | "damaged" | "lost" | "scrapped" | "written_off" | "stock_out";
 export type CylinderFillLevel = "full" | "empty";
 
 export interface Cylinder {
@@ -91,6 +91,8 @@ export interface Cylinder {
   /** Company-owned unless sold to the customer. */
   ownedBy?: "company" | "customer";
   lotNumber?: string;
+  /** Set while an issue is in progress so concurrent requests cannot take the same cylinder. */
+  issueLock?: string | null;
   lastMovementAt: string;
   createdAt: string;
 }
@@ -102,7 +104,10 @@ export type CylinderMovementType =
   | "refilled"
   | "transferred"
   | "damaged"
-  | "lost";
+  | "lost"
+  | "stock_out"
+  | "scrapped"
+  | "written_off";
 
 export interface CylinderMovement {
   id: ID;
@@ -132,7 +137,8 @@ export interface CylinderMovement {
     | "repair"
     | "scrap"
     | "writeoff"
-    | "sale";
+    | "sale"
+    | "stock_out";
   reason?: string;
   penaltyAmount?: number;
   accountingTreatment?: "charge" | "writeoff" | "none";
@@ -285,7 +291,7 @@ export interface LedgerEntry {
   direction: "in" | "out";
   amount: number;
   category: LedgerCategory;
-  refType?: "sales" | "expense" | "purchase" | "voucher" | "payroll";
+  refType?: "sales" | "expense" | "purchase" | "voucher" | "payroll" | "equity";
   refId?: string;
   notes?: string;
 }

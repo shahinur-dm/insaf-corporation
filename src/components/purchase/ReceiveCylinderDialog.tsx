@@ -3,6 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { cylinderService } from "@/services/cylinder.service";
 import { productService } from "@/services/product.service";
 import { isCylinderProduct, parseSerials, suggestSerials } from "@/lib/cylinder-product";
+import { getCylinderTrackingFn } from "@/lib/settings.functions";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import type { PurchaseOrder } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -19,13 +22,15 @@ export function ReceiveCylinderDialog({
   po: PurchaseOrder;
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  onReceive: (serialsByItem: string[][]) => void;
+  onReceive: (payload: { serialsByItem?: string[][]; lotNumber?: string }) => void;
   pending?: boolean;
 }) {
   const t = useT();
   const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: productService.list });
   const { data: cylinders = [] } = useQuery({ queryKey: ["cylinders"], queryFn: cylinderService.list });
+  const { data: tracking = "serial" } = useQuery({ queryKey: ["cylinderTracking"], queryFn: () => getCylinderTrackingFn() });
   const [texts, setTexts] = useState<string[]>([]);
+  const [lotNumber, setLotNumber] = useState("");
 
   const cylLines = useMemo(
     () => po.items.map((it, index) => ({ it, index, product: products.find((p) => p.id === it.productId) }))
@@ -41,7 +46,9 @@ export function ReceiveCylinderDialog({
     }));
   }, [open, po, cylinders]);
 
-  const ready = cylLines.every(({ it, index }) => parseSerials(texts[index] || "").length === it.quantity);
+  const ready = tracking === "lot"
+    ? Boolean(lotNumber.trim())
+    : cylLines.every(({ it, index }) => parseSerials(texts[index] || "").length === it.quantity);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -50,7 +57,13 @@ export function ReceiveCylinderDialog({
           <DialogTitle>{t("purchases.receiveCylinders")}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
-          {cylLines.map(({ it, index, product }) => {
+          {tracking === "lot" && (
+            <div className="space-y-1.5">
+              <Label>{t("inventory.lotNumber")}</Label>
+              <Input value={lotNumber} onChange={(e) => setLotNumber(e.target.value)} placeholder="LOT-2026-001" />
+            </div>
+          )}
+          {tracking !== "lot" && cylLines.map(({ it, index, product }) => {
             const serials = parseSerials(texts[index] || "");
             return (
               <section key={index} className="space-y-2 rounded-lg border p-3">
@@ -88,7 +101,10 @@ export function ReceiveCylinderDialog({
           <Button variant="ghost" onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button>
           <Button
             disabled={!ready || pending}
-            onClick={() => onReceive(po.items.map((_, i) => parseSerials(texts[i] || "")))}
+            onClick={() => onReceive({
+              serialsByItem: tracking === "serial" ? po.items.map((_, i) => parseSerials(texts[i] || "")) : undefined,
+              lotNumber: lotNumber || undefined,
+            })}
           >
             {t("purchases.receive")}
           </Button>

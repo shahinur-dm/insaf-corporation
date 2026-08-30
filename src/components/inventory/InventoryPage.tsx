@@ -90,7 +90,7 @@ export function InventoryPage() {
   const [qty, setQty] = useState("1");
   const [type, setType] = useState<
     "in" | "out" | "adjust" | "refill" | "customer_sent" | "return_empty" | "send_supplier" | "receive_supplier"
-    | "loan" | "mark_lost" | "mark_damaged" | "repair" | "scrap" | "sell_cylinder"
+    | "loan" | "mark_lost" | "mark_damaged" | "repair" | "scrap" | "writeoff" | "sell_cylinder" | "exchange"
   >("in");
   const [notes, setNotes] = useState("");
   const [supplierId, setSupplierId] = useState("");
@@ -121,6 +121,11 @@ export function InventoryPage() {
     qc.invalidateQueries({ queryKey: ["cylinders"] });
     qc.invalidateQueries({ queryKey: ["cylinderMovements"] });
     qc.invalidateQueries({ queryKey: ["suppliers"] });
+    qc.invalidateQueries({ queryKey: ["sales"] });
+    qc.invalidateQueries({ queryKey: ["cylAccountability"] });
+    qc.invalidateQueries({ queryKey: ["customers"] });
+    qc.invalidateQueries({ queryKey: ["vouchers"] });
+    qc.invalidateQueries({ queryKey: ["ledger"] });
   };
 
   const adjust = useMutation({
@@ -137,7 +142,10 @@ export function InventoryPage() {
         });
       }
       if (type === "customer_sent") {
-        return inventoryService.sendToCustomer({ customerId, productId, quantity: Number(qty), lotNumber: lotNumber || undefined, notes });
+        return inventoryService.sendToCustomer({ customerId, productId, quantity: Number(qty), lotNumber: lotNumber || undefined, notes, expectedReturnDate: expectedReturn || undefined });
+      }
+      if (type === "exchange") {
+        return inventoryService.exchangeWithCustomer({ customerId, productId, quantity: Number(qty), lotNumber: lotNumber || undefined, notes, expectedReturnDate: expectedReturn || undefined });
       }
       if (type === "return_empty") return inventoryService.returnEmpty({ customerId, productId, quantity: Number(qty), notes });
       if (type === "loan") {
@@ -249,6 +257,7 @@ export function InventoryPage() {
                   <SelectItem value="adjust">{t("inventory.setAbsolute")}</SelectItem>
                   <SelectItem value="refill">{t("inventory.refillComplete")}</SelectItem>
                   <SelectItem value="customer_sent">{t("inventory.customerSent")}</SelectItem>
+                  <SelectItem value="exchange">{t("inventory.exchange")}</SelectItem>
                   <SelectItem value="return_empty">{t("inventory.customerReturned")}</SelectItem>
                   <SelectItem value="send_supplier">{t("inventory.supplierSent")}</SelectItem>
                   <SelectItem value="receive_supplier">{t("inventory.supplierReturned")}</SelectItem>
@@ -258,6 +267,7 @@ export function InventoryPage() {
                   <SelectItem value="mark_damaged">{t("inventory.markDamaged")}</SelectItem>
                   <SelectItem value="repair">{t("inventory.repair")}</SelectItem>
                   <SelectItem value="scrap">{t("inventory.scrap")}</SelectItem>
+                  <SelectItem value="writeoff">{t("inventory.writeoff")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -286,7 +296,7 @@ export function InventoryPage() {
                 </Select>
               </div>
             )}
-            {(type === "return_empty" || type === "loan" || type === "sell_cylinder" || type === "customer_sent" || (type === "mark_lost" && partyKind === "customer")) && (
+            {(type === "return_empty" || type === "loan" || type === "sell_cylinder" || type === "customer_sent" || type === "exchange" || (type === "mark_lost" && partyKind === "customer")) && (
               <div className="space-y-1.5">
                 <Label>{t("common.customer")}</Label>
                 <Select value={customerId || undefined} onValueChange={setCustomerId}>
@@ -299,13 +309,13 @@ export function InventoryPage() {
                 </Select>
               </div>
             )}
-            {(type === "send_supplier" || type === "loan" || type === "mark_lost") && (
+            {(type === "send_supplier" || type === "loan" || type === "customer_sent" || type === "exchange" || type === "mark_lost") && (
               <>
                 <div className="space-y-1.5">
                   <Label>{t("common.date")}</Label>
                   <Input type="date" value={sendDate} onChange={(e) => setSendDate(e.target.value)} />
                 </div>
-                {(type === "send_supplier" || type === "loan") && (
+                {(type === "send_supplier" || type === "loan" || type === "customer_sent" || type === "exchange") && (
                   <div className="space-y-1.5">
                     <Label>{t("inventory.expectedReturn")}</Label>
                     <Input type="date" value={expectedReturn} onChange={(e) => setExpectedReturn(e.target.value)} />
@@ -336,7 +346,7 @@ export function InventoryPage() {
                 </div>
               </>
             )}
-            {tracking === "lot" && (type === "customer_sent" || type === "send_supplier" || type === "loan" || type === "sell_cylinder") && (
+            {tracking === "lot" && (type === "customer_sent" || type === "send_supplier" || type === "loan" || type === "sell_cylinder" || type === "exchange") && (
               <div className="space-y-1.5">
                 <Label>{t("inventory.lotNumber")}</Label>
                 <Input value={lotNumber} onChange={(e) => setLotNumber(e.target.value)} placeholder="LOT-2026-001" />
@@ -363,7 +373,7 @@ export function InventoryPage() {
               <Label>{type === "refill" ? t("inventory.receivedBy") : t("common.notes")}</Label>
               <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
             </div>
-            <Button className="w-full" disabled={!productId || adjust.isPending || Number(qty) < 0 || ((type === "send_supplier" || type === "receive_supplier" || (type === "mark_lost" && partyKind === "supplier")) && !supplierId) || ((type === "return_empty" || type === "loan" || type === "sell_cylinder" || type === "customer_sent" || (type === "mark_lost" && partyKind === "customer")) && !customerId)} onClick={() => { if (adjust.isPending) return; adjust.mutate(); }}>
+            <Button className="w-full" disabled={!productId || adjust.isPending || Number(qty) < 0 || ((type === "send_supplier" || type === "receive_supplier" || (type === "mark_lost" && partyKind === "supplier")) && !supplierId) || ((type === "return_empty" || type === "loan" || type === "sell_cylinder" || type === "customer_sent" || type === "exchange" || (type === "mark_lost" && partyKind === "customer")) && !customerId) || ((type === "customer_sent" || type === "loan" || type === "exchange") && !expectedReturn)} onClick={() => { if (adjust.isPending) return; adjust.mutate(); }}>
               {t("inventory.apply")}
             </Button>
           </CardContent>

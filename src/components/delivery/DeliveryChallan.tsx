@@ -55,7 +55,7 @@ export function DeliveryChallan({ id }: { id: string }) {
   const { data: tracking = "serial" } = useQuery({ queryKey: ["cylinderTracking"], queryFn: () => getCylinderTrackingFn() });
 
   const confirm = useMutation({
-    mutationFn: (payload?: { issuedIdsByItem?: string[][]; returnedIds?: string[]; lotNumber?: string }) =>
+    mutationFn: (payload?: { issuedIdsByItem?: string[][]; returnedIds?: string[]; lotNumber?: string; expectedReturnAt?: string; skipCylinders?: boolean; asExchange?: boolean }) =>
       deliveryService.confirm(id, payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["deliveries"] });
@@ -66,6 +66,7 @@ export function DeliveryChallan({ id }: { id: string }) {
       qc.invalidateQueries({ queryKey: ["cylinders"] });
       qc.invalidateQueries({ queryKey: ["cylinderMovements"] });
       qc.invalidateQueries({ queryKey: ["stockMovements"] });
+      qc.invalidateQueries({ queryKey: ["cylAccountability"] });
       setAssignOpen(false);
       toast.success(t("deliveries.confirm"));
     },
@@ -98,8 +99,7 @@ export function DeliveryChallan({ id }: { id: string }) {
   const canConfirm = d && (d.status === "pending" || d.status === "in_transit");
   const canDelete = d?.status === "pending";
   const startConfirm = () => {
-    if (needsCylinders && tracking === "serial") setAssignOpen(true);
-    else if (needsCylinders && tracking === "lot") setAssignOpen(true);
+    if (needsCylinders) setAssignOpen(true);
     else confirm.mutate(undefined);
   };
   const serialsOf = (ids?: string[]) =>
@@ -129,7 +129,14 @@ export function DeliveryChallan({ id }: { id: string }) {
               </Button>
             )}
             {canConfirm && (
-              <Button disabled={busy} onClick={startConfirm}>{t("deliveries.confirm")}</Button>
+              <>
+                <Button disabled={busy} onClick={startConfirm}>{t("deliveries.confirm")}</Button>
+                {needsCylinders && (
+                  <Button variant="outline" disabled={busy} onClick={() => confirm.mutate({ skipCylinders: true })}>
+                    {t("deliveries.sellGasOnly")}
+                  </Button>
+                )}
+              </>
             )}
             <Button variant="outline" onClick={() => window.print()}>
               <Printer className="mr-1 h-4 w-4" />

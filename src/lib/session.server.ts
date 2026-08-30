@@ -5,10 +5,23 @@ type SessionData = {
   user?: AuthUser;
 };
 
+function isProductionRuntime() {
+  return process.env.NODE_ENV === "production";
+}
+
+/** Demo bootstrap + on-screen quick login. Never implied in production unless DEMO_LOGIN=true. */
+export function isDemoLoginEnabled() {
+  if (process.env.DEMO_LOGIN === "true") return true;
+  if (process.env.DEMO_LOGIN === "false") return false;
+  return !isProductionRuntime();
+}
+
 function sessionPassword() {
   const secret = process.env.SESSION_SECRET;
   if (secret && secret.length >= 32) return secret;
-  // Dev fallback — replace via SESSION_SECRET in production.
+  if (isProductionRuntime()) {
+    throw new Error("SESSION_SECRET is required in production.");
+  }
   return "insaf-gas-corp-dev-session-secret-32chars";
 }
 
@@ -21,6 +34,7 @@ export function useAppSession() {
       httpOnly: true,
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
+      path: "/",
     },
   });
 }
@@ -32,10 +46,23 @@ export async function requireUser(): Promise<AuthUser> {
   return user;
 }
 
-export function getAuthCredentials() {
-  return {
-    username: process.env.AUTH_USER || "operator",
-    password: process.env.AUTH_PASSWORD || "insaf123",
-    displayName: process.env.AUTH_DISPLAY_NAME || "Operator",
-  };
+/** Explicit AUTH_* only. Production never falls back to operator/insaf123. */
+export function getAuthCredentials(): { username: string; password: string; displayName: string } | null {
+  const username = process.env.AUTH_USER?.trim();
+  const password = process.env.AUTH_PASSWORD;
+  if (username && password) {
+    return {
+      username,
+      password,
+      displayName: process.env.AUTH_DISPLAY_NAME?.trim() || "Operator",
+    };
+  }
+  if (isDemoLoginEnabled()) {
+    return {
+      username: "operator",
+      password: "insaf123",
+      displayName: process.env.AUTH_DISPLAY_NAME?.trim() || "Operator",
+    };
+  }
+  return null;
 }

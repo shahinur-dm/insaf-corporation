@@ -1,11 +1,11 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { createFileRoute, redirect, useNavigate, useRouter } from "@tanstack/react-router";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Building2, Calculator, ClipboardCheck, HardHat, Languages, Shield, Sparkles, Truck, Users, Warehouse,
 } from "lucide-react";
-import { loginFn, getSessionFn } from "@/lib/auth.functions";
+import { loginFn, getSessionFn, demoLoginEnabledFn } from "@/lib/auth.functions";
 import { LoginGateOverlay } from "@/components/auth/LoginGateOverlay";
 import { BrandLogo } from "@/components/common/BrandLogo";
 import { Button } from "@/components/ui/button";
@@ -85,6 +85,12 @@ function LoginPage() {
   const [gateUser, setGateUser] = useState<{ name: string; role?: string }>({ name: "" });
   const [pendingNav, setPendingNav] = useState<string | null>(null);
   const pageRef = useRef<HTMLDivElement>(null);
+  const { data: demoLogin } = useQuery({
+    queryKey: ["demoLoginEnabled"],
+    queryFn: () => demoLoginEnabledFn(),
+    staleTime: 60_000,
+  });
+  const showDemoLogin = Boolean(demoLogin?.enabled);
 
   // Unlock document scroll on login (Lenis / previous pages may leave body locked)
   useLayoutEffect(() => {
@@ -248,15 +254,18 @@ function LoginPage() {
                 >
                   {pending && !quickUser ? t("login.submitting") : t("login.submit")}
                 </Button>
+                {showDemoLogin && (
                 <p className="text-center text-[10px] text-slate-500">
                   {t("login.defaultHint")}{" "}
                   <span className="font-mono text-slate-400">operator</span> /{" "}
                   <span className="font-mono text-slate-400">insaf123</span>
                 </p>
+                )}
               </form>
             </div>
           </aside>
 
+          {showDemoLogin && (
           <section data-login-enter className="order-2 w-full min-w-0 lg:order-1">
             <div className="mb-3">
               <Badge className="h-5 bg-emerald-500/15 px-2 text-[10px] text-emerald-300 hover:bg-emerald-500/15">
@@ -312,6 +321,7 @@ function LoginPage() {
               {t("login.quickPassHint")}
             </p>
           </section>
+          )}
         </div>
       </div>
 

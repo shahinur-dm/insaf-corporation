@@ -22,7 +22,7 @@ export function DeliveryCylinderDialog({
   delivery: Delivery;
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  onConfirm: (payload: { issuedIdsByItem: string[][]; returnedIds: string[]; lotNumber?: string }) => void;
+  onConfirm: (payload: { issuedIdsByItem: string[][]; returnedIds: string[]; lotNumber?: string; expectedReturnAt?: string; asExchange?: boolean }) => void;
   pending?: boolean;
 }) {
   const t = useT();
@@ -32,6 +32,7 @@ export function DeliveryCylinderDialog({
   const [issued, setIssued] = useState<string[][]>([]);
   const [returned, setReturned] = useState<string[]>([]);
   const [lotNumber, setLotNumber] = useState("");
+  const [expectedReturn, setExpectedReturn] = useState("");
 
   const cylLines = useMemo(
     () => delivery.items.map((it, index) => ({ it, index, product: products.find((p) => p.id === it.productId) }))
@@ -49,7 +50,10 @@ export function DeliveryCylinderDialog({
   const empties = cylinders.filter(
     (c) => c.status === "at_customer" && (!c.customerId || c.customerId === delivery.customerId),
   );
+  const needQty = cylLines.reduce((a, { it }) => a + it.quantity, 0);
+  const issuedCount = tracking === "serial" ? issued.flat().length : needQty;
   const ready = tracking !== "serial" || cylLines.every(({ it, index }) => (issued[index]?.length || 0) === it.quantity);
+  const exchangeReady = issuedCount > 0 && issuedCount === returned.length;
 
   const toggle = (index: number, id: string, qty: number) => {
     setIssued((prev) => {
@@ -68,6 +72,10 @@ export function DeliveryCylinderDialog({
           <DialogTitle>{t("deliveries.assignTitle")}</DialogTitle>
         </DialogHeader>
         <div className="space-y-5">
+          <div className="space-y-1.5">
+            <Label>{t("inventory.expectedReturn")}</Label>
+            <Input type="date" value={expectedReturn} onChange={(e) => setExpectedReturn(e.target.value)} />
+          </div>
           {tracking === "lot" && (
             <div className="space-y-1.5">
               <Label>{t("inventory.lotNumber")}</Label>
@@ -154,8 +162,15 @@ export function DeliveryCylinderDialog({
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button>
-          <Button disabled={!ready || pending || (tracking === "lot" && !lotNumber.trim())} onClick={() => onConfirm({ issuedIdsByItem: issued, returnedIds: returned, lotNumber: lotNumber || undefined })}>
+          <Button disabled={!ready || pending || (tracking === "lot" && !lotNumber.trim()) || !expectedReturn} onClick={() => onConfirm({ issuedIdsByItem: issued, returnedIds: returned, lotNumber: lotNumber || undefined, expectedReturnAt: expectedReturn, asExchange: false })}>
             {t("deliveries.confirm")}
+          </Button>
+          <Button
+            variant="outline"
+            disabled={!ready || !exchangeReady || pending || (tracking === "lot" && !lotNumber.trim()) || !expectedReturn}
+            onClick={() => onConfirm({ issuedIdsByItem: issued, returnedIds: returned, lotNumber: lotNumber || undefined, expectedReturnAt: expectedReturn, asExchange: true })}
+          >
+            {t("deliveries.exchange")}
           </Button>
         </DialogFooter>
       </DialogContent>

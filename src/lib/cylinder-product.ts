@@ -10,7 +10,7 @@ export function isCylinderProduct(p?: Pick<Product, "uom" | "productType"> | nul
 
 /** Company cylinder on a sales line that should not hit the invoice. */
 export function isCylinderMovementOnly(item: Pick<LineItem, "price" | "sellCylinder">, p?: Pick<Product, "uom" | "productType"> | null) {
-  if (p?.productType !== "cylinder") return false;
+  if (!isCylinderProduct(p)) return false;
   if (item.sellCylinder) return false;
   return !(Number(item.price) > 0);
 }
@@ -37,6 +37,7 @@ export const CYLINDER_SIZE_OPTIONS = [12, 35, 45] as const;
 export function cylinderIsEmpty(c: Pick<Cylinder, "status" | "fillLevel">) {
   if (c.fillLevel === "empty") return true;
   if (c.fillLevel === "full") return false;
+  // Legacy rows without fillLevel: only refilling is treated as empty.
   return c.status === "refilling";
 }
 
@@ -66,9 +67,14 @@ export function isCompanyOwned(c: Pick<Cylinder, "ownedBy">) {
   return c.ownedBy !== "customer";
 }
 
+/** Scrap / write-off / stock-out — no longer active company inventory. */
+export function isInactiveCompanyCylinder(c: Pick<Cylinder, "status">) {
+  return c.status === "scrapped" || c.status === "written_off" || c.status === "stock_out";
+}
+
 /** Company-owned cylinders by location — never typed in. */
 export function companyOwnedLocations(cylinders: Pick<Cylinder, "status" | "fillLevel" | "supplierId" | "ownedBy">[]) {
-  const company = cylinders.filter((c) => isCompanyOwned(c));
+  const company = cylinders.filter((c) => isCompanyOwned(c) && !isInactiveCompanyCylinder(c));
   let warehouse = 0;
   let customers = 0;
   let suppliers = 0;
@@ -82,28 +88,24 @@ export function companyOwnedLocations(cylinders: Pick<Cylinder, "status" | "fill
       suppliers += 1;
       inRefill += 1;
     } else if (c.status === "at_customer") customers += 1;
-    else if (c.status === "refilling" || cylinderWarehouseEmpty(c)) {
-      warehouse += 1;
-      if (c.status === "refilling") inRefill += 1;
-    } else warehouse += 1;
+    else warehouse += 1;
   }
   return { owned: company.length, warehouse, customers, suppliers, inRefill, lost, damaged };
 }
 
-export function cylinderOverviewCounts(cylinders: Pick<Cylinder, "status" | "fillLevel">[]) {
+export function cylinderOverviewCounts(cylinders: Pick<Cylinder, "status" | "fillLevel" | "supplierId">[]) {
   let full = 0;
   let empty = 0;
   let refillPending = 0;
   let inTransit = 0;
-  for (const c of cylinders) {
+  const active = cylinders.filter((c) => !isInactiveCompanyCylinder(c));
+  for (const c of active) {
     if (c.status === "in_transit") inTransit += 1;
-    if (c.status === "refilling" || (cylinderIsEmpty(c) && c.status === "in_stock")) {
-      refillPending += 1;
-    }
+    if (cylinderAtSupplier(c)) refillPending += 1;
     if (cylinderIsFullStock(c)) full += 1;
-    else if (cylinderIsEmpty(c) && c.status !== "at_customer" && c.status !== "in_transit") empty += 1;
+    else if (cylinderIsEmpty(c) && c.status !== "at_customer" && c.status !== "in_transit" && !cylinderAtSupplier(c)) empty += 1;
   }
-  return { total: cylinders.length, full, empty, refillPending, inTransit };
+  return { total: active.length, full, empty, refillPending, inTransit };
 }
 
 /** @deprecated use cylinderOverviewCounts */

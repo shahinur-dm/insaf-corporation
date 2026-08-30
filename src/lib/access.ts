@@ -43,8 +43,8 @@ export function canRoleAccess(
   if (!role) return false;
   if (role === "Administrator") return true;
   if (!APP_ROLES.includes(role as AppRole)) return false;
-  const resolved = matrix ?? defaultMatrix();
-  return Boolean(resolved[role as AppRole]?.[moduleId]);
+  if (!matrix) return false;
+  return Boolean(matrix[role as AppRole]?.[moduleId]);
 }
 
 export { APP_MODULES, APP_ROLES, defaultMatrix };

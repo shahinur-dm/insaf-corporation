@@ -27,6 +27,7 @@ export type PartyCylinderEvent = {
   sent: number;
   returned: number;
   remaining: number;
+  lost: number;
   notes?: string;
 };
 
@@ -77,7 +78,7 @@ function overdueCount(
   return n;
 }
 
-/** Transaction-based. Remaining is never stored — Remaining = Sent − Returned. */
+/** Transaction-based. Remaining is never stored — Remaining = Sent − Returned. Lost is separate. */
 export function partyCylinderBalance(
   kind: PartyCylinderKind,
   id: string,
@@ -97,25 +98,10 @@ export function partyCylinderBalance(
     if (m.type === "damaged") damaged += 1;
   }
 
-  for (const c of cylinders) {
-    if (kind === "customer") {
-      if (c.status !== "at_customer" || c.customerId !== id) continue;
-      const hasIssued = movements.some(
-        (m) => m.cylinderId === c.id && m.type === "issued" && m.customerId === id && !m.sold,
-      );
-      if (!hasIssued) sent += 1;
-    } else if (c.supplierId === id && c.status !== "damaged" && c.status !== "lost") {
-      const hasSend = movements.some(
-        (m) => m.cylinderId === c.id && m.supplierId === id && m.type === "transferred",
-      );
-      if (!hasSend) sent += 1;
-    }
-  }
-
   return {
     sent,
     returned,
-    remaining: sent - returned - lost,
+    remaining: sent - returned,
     overdue: overdueCount(kind, id, cylinders, movements),
     lost,
     damaged,
@@ -153,9 +139,35 @@ export function partyCylinderHistory(
       sent,
       returned,
       remaining: runSent - runReturned,
+      lost: m.type === "lost" ? 1 : 0,
       notes: m.notes,
     };
   }).reverse();
+}
+
+/** Cylinders physically with a party that have no matching send movement. Never used to inflate Sent. */
+export function partyCylinderMissingMoves(
+  kind: PartyCylinderKind,
+  id: string,
+  cylinders: Cylinder[],
+  movements: CylinderMovement[],
+) {
+  let n = 0;
+  for (const c of cylinders) {
+    if (kind === "customer") {
+      if (c.status !== "at_customer" || c.customerId !== id) continue;
+      const hasIssued = movements.some(
+        (m) => m.cylinderId === c.id && m.type === "issued" && m.customerId === id && !m.sold,
+      );
+      if (!hasIssued) n += 1;
+    } else if (c.supplierId === id && c.status !== "damaged" && c.status !== "lost" && c.status !== "scrapped" && c.status !== "written_off") {
+      const hasSend = movements.some(
+        (m) => m.cylinderId === c.id && m.supplierId === id && m.type === "transferred",
+      );
+      if (!hasSend) n += 1;
+    }
+  }
+  return n;
 }
 
 export const customerCylinderBalance = (

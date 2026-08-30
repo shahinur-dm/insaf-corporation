@@ -41,11 +41,15 @@ const PURPOSE_KEY: Record<string, string> = {
   scrap: "cyl.ledger.scrap",
   writeoff: "cyl.ledger.writeoff",
   sale: "cyl.ledger.sale",
+  stock_out: "cyl.ledger.stockOut",
 };
 
 function purposeOf(m: CylinderMovement) {
   if (m.purpose) return m.purpose;
-  if (m.sold || m.type === "issued" && m.notes?.includes("ownership")) return "sale";
+  if (m.type === "stock_out") return "stock_out";
+  if (m.type === "scrapped") return "scrap";
+  if (m.type === "written_off") return "writeoff";
+  if (m.sold) return "sale";
   if (m.type === "lost") return "lost";
   if (m.type === "damaged") return "damaged";
   if (m.type === "transferred" && m.supplierId) return "refill_sent";
@@ -110,7 +114,7 @@ export function buildCylinderOverdueRows(opts: {
   const rows: CylinderOverdueRow[] = [];
 
   for (const c of cylinders) {
-    if (c.status === "lost" || c.status === "damaged" || c.ownedBy === "customer") continue;
+    if (c.status === "lost" || c.status === "damaged" || c.status === "scrapped" || c.status === "written_off" || c.status === "stock_out" || c.ownedBy === "customer") continue;
     const heldCustomer = c.status === "at_customer" && c.customerId;
     const heldSupplier = c.supplierId && c.status !== "at_customer";
     if (!heldCustomer && !heldSupplier) continue;

@@ -12,7 +12,9 @@ export const listAppUsersFn = createServerFn({ method: "POST" }).handler(async (
 });
 
 export const listLoginDirectoryFn = createServerFn({ method: "GET" }).handler(async () => {
+  const { requireUser } = await import("./session.server");
   const { listLoginDirectory } = await import("./users.server");
+  await requireUser();
   return listLoginDirectory();
 });
 
@@ -44,6 +46,9 @@ export const removeAppUserFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { requireUser } = await import("./session.server");
     const { removeAppUser } = await import("./users.server");
-    await requireUser();
+    const { roleCanAccess } = await import("./settings.server");
+    const user = await requireUser();
+    const allowed = user.role === "Administrator" || (await roleCanAccess(user.role, "settings"));
+    if (!allowed) throw new Error("Not allowed to manage users");
     return removeAppUser(data.id);
   });
