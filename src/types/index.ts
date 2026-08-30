@@ -84,6 +84,7 @@ export interface Cylinder {
   status: CylinderStatus;
   location: string;
   customerId?: ID;
+  supplierId?: ID;
   gasCategory?: ProductCategory;
   /** Full vs empty gas contents. Returned empties are empty until refilled. */
   fillLevel?: CylinderFillLevel;
@@ -113,6 +114,7 @@ export interface CylinderMovement {
   by: string;
   /** True when the cylinder was sold (ownership transfer), not loaned. */
   sold?: boolean;
+  expectedReturnAt?: string;
 }
 
 export interface LineItem {

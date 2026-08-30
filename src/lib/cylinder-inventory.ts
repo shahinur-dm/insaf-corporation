@@ -1,5 +1,8 @@
 import type { Cylinder, Delivery, Product, SalesOrder, StockMovement } from "@/types";
-import { cylinderIsEmpty, cylinderIsFullStock, isCylinderProduct } from "@/lib/cylinder-product";
+import {
+  cylinderAtCustomer, cylinderAtSupplier, cylinderIsEmpty, cylinderIsFullStock,
+  cylinderWarehouseEmpty, isCylinderProduct,
+} from "@/lib/cylinder-product";
 
 export type InventoryStockStatus = "normal" | "low" | "out";
 
@@ -15,6 +18,10 @@ export type ProductInventoryRow = {
   delivered: number;
   empty: number;
   refillPending: number;
+  withCustomer: number;
+  withSupplier: number;
+  damaged: number;
+  lost: number;
   available: number;
   reorderLevel: number;
   status: InventoryStockStatus;
@@ -72,21 +79,29 @@ export function buildProductInventory(
   movements: StockMovement[],
 ): ProductInventoryRow[] {
   return products.map((p, idx) => {
-    const mine = cylinders.filter((c) => c.productId === p.id && c.status !== "damaged" && c.status !== "lost");
-    const isCyl = isCylinderProduct(p) || (p.productType !== "gas" && mine.length > 0);
+    const all = cylinders.filter((c) => c.productId === p.id);
+    const isCyl = isCylinderProduct(p) || (p.productType !== "gas" && all.length > 0);
     const reserved = reservedQtyForProduct(p.id, sales, deliveries, movements);
     let total: number;
     let full: number;
     let delivered: number;
     let empty: number;
     let refillPending: number;
+    let withCustomer = 0;
+    let withSupplier = 0;
+    let damaged = 0;
+    let lost = 0;
     if (isCyl) {
-      total = mine.length;
-      full = mine.filter(cylinderIsFullStock).length;
-      delivered = mine.filter((c) => c.status === "at_customer").length;
-      empty = mine.filter((c) => cylinderIsEmpty(c) && c.status !== "at_customer" && c.status !== "in_transit").length;
-      refillPending = mine.filter((c) =>
-        c.status === "refilling" || (cylinderIsEmpty(c) && c.status === "in_stock"),
+      withCustomer = all.filter(cylinderAtCustomer).length;
+      withSupplier = all.filter(cylinderAtSupplier).length;
+      damaged = all.filter((c) => c.status === "damaged").length;
+      lost = all.filter((c) => c.status === "lost").length;
+      total = all.length;
+      full = all.filter(cylinderIsFullStock).length;
+      delivered = withCustomer;
+      empty = all.filter(cylinderWarehouseEmpty).length;
+      refillPending = all.filter((c) =>
+        cylinderAtSupplier(c) || c.status === "refilling" || (cylinderWarehouseEmpty(c) && c.status === "in_stock"),
       ).length;
     } else {
       total = Math.max(0, (p.stock || 0) + reserved);
@@ -113,6 +128,10 @@ export function buildProductInventory(
       delivered,
       empty,
       refillPending,
+      withCustomer,
+      withSupplier,
+      damaged,
+      lost,
       available,
       reorderLevel: p.reorderLevel || 0,
       status,
@@ -129,8 +148,12 @@ export function sumInventory(rows: ProductInventoryRow[]) {
       delivered: a.delivered + r.delivered,
       empty: a.empty + r.empty,
       refillPending: a.refillPending + r.refillPending,
+      withCustomer: a.withCustomer + r.withCustomer,
+      withSupplier: a.withSupplier + r.withSupplier,
+      damaged: a.damaged + r.damaged,
+      lost: a.lost + r.lost,
       available: a.available + r.available,
     }),
-    { total: 0, full: 0, reserved: 0, delivered: 0, empty: 0, refillPending: 0, available: 0 },
+    { total: 0, full: 0, reserved: 0, delivered: 0, empty: 0, refillPending: 0, withCustomer: 0, withSupplier: 0, damaged: 0, lost: 0, available: 0 },
   );
 }

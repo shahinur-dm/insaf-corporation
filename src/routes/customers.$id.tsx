@@ -107,9 +107,10 @@ function CustomerDetailBody() {
             : t("customers.reminderOff")}
         />
         <Info label={t("customers.since")} value={formatOpenedOn(c.createdAt)} />
+        <p className="md:col-span-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t("customers.cylBalanceTitle")}</p>
         <Info label={t("customers.cylSent")} value={String(cylBal.sent)} />
         <Info label={t("customers.cylReturned")} value={String(cylBal.returned)} />
-        <Info label={t("customers.cylRemaining")} value={String(cylBal.remaining)} />
+        <Info label={t("customers.cylBalance")} value={String(cylBal.remaining)} />
         <Info label={t("customers.cylOverdue")} value={String(cylBal.overdue)} />
         <Info label={t("customers.cylLost")} value={String(cylBal.lost)} />
         <Info label={t("customers.cylDamaged")} value={String(cylBal.damaged)} />
@@ -126,10 +127,10 @@ function CustomerDetailBody() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>{t("common.date")}</TableHead>
-                    <TableHead>{t("common.product")}</TableHead>
+                    <TableHead>{t("common.type")}</TableHead>
                     <TableHead className="text-right">{t("customers.cylSent")}</TableHead>
                     <TableHead className="text-right">{t("customers.cylReturned")}</TableHead>
-                    <TableHead className="text-right">{t("customers.cylRemaining")}</TableHead>
+                    <TableHead className="text-right">{t("customers.cylBalance")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -137,7 +138,7 @@ function CustomerDetailBody() {
                     <TableRow key={row.id}>
                       <TableCell className="text-muted-foreground">{formatDate(row.date)}</TableCell>
                       <TableCell>
-                        {row.productName}
+                        {t(row.typeKey)}
                         {row.serial ? <span className="ml-1 font-mono text-xs text-muted-foreground">{row.serial}</span> : null}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{row.sent || "—"}</TableCell>

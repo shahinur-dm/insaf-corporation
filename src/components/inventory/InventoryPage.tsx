@@ -8,6 +8,7 @@ import { inventoryService } from "@/services/inventory.service";
 import { cylinderService } from "@/services/cylinder.service";
 import { salesService } from "@/services/sales.service";
 import { deliveryService } from "@/services/delivery.service";
+import { supplierService } from "@/services/supplier.service";
 import { PageHeader } from "@/components/common/PageHeader";
 import { DataTable } from "@/components/common/DataTable";
 import { StatCard } from "@/components/dashboard/widgets/StatCard";
@@ -69,6 +70,7 @@ export function InventoryPage() {
   const { data: cylinders = [] } = useQuery({ queryKey: ["cylinders"], queryFn: cylinderService.list });
   const { data: sales = [] } = useQuery({ queryKey: ["sales"], queryFn: salesService.list });
   const { data: deliveries = [] } = useQuery({ queryKey: ["deliveries"], queryFn: deliveryService.list });
+  const { data: suppliers = [] } = useQuery({ queryKey: ["suppliers"], queryFn: supplierService.list });
 
   const rows = useMemo(
     () => buildProductInventory(products, cylinders, sales, deliveries, movements),
@@ -82,8 +84,12 @@ export function InventoryPage() {
 
   const [productId, setProductId] = useState("");
   const [qty, setQty] = useState("1");
-  const [type, setType] = useState<"in" | "out" | "adjust" | "refill">("in");
+  const [type, setType] = useState<"in" | "out" | "adjust" | "refill" | "send_supplier" | "receive_supplier">("in");
   const [notes, setNotes] = useState("");
+  const [supplierId, setSupplierId] = useState("");
+  const [sendDate, setSendDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [expectedReturn, setExpectedReturn] = useState("");
+  const [condition, setCondition] = useState<"full" | "empty" | "damaged">("full");
   const [focus, setFocus] = useState<"all" | "full" | "empty" | "refill" | "reserved" | "available">("all");
 
   const filteredRows = useMemo(() => {
@@ -100,16 +106,33 @@ export function InventoryPage() {
     qc.invalidateQueries({ queryKey: ["stockMovements"] });
     qc.invalidateQueries({ queryKey: ["dashboard"] });
     qc.invalidateQueries({ queryKey: ["cylinders"] });
+    qc.invalidateQueries({ queryKey: ["cylinderMovements"] });
+    qc.invalidateQueries({ queryKey: ["suppliers"] });
   };
 
   const adjust = useMutation({
     mutationFn: async () => {
       if (type === "refill") return inventoryService.completeRefill(productId, Number(qty), notes || "Warehouse");
+      if (type === "send_supplier") {
+        return inventoryService.sendToSupplier({
+          supplierId, productId, quantity: Number(qty), date: sendDate, expectedReturnDate: expectedReturn || undefined, notes,
+        });
+      }
+      if (type === "receive_supplier") {
+        return inventoryService.receiveFromSupplier({
+          supplierId, productId, quantity: Number(qty), condition, notes,
+        });
+      }
       return inventoryService.adjust(productId, Number(qty), type, notes);
     },
     onSuccess: () => {
       invalidate();
-      toast.success(type === "refill" ? t("inventory.refilled") : t("inventory.updated"));
+      toast.success(
+        type === "refill" ? t("inventory.refilled")
+          : type === "send_supplier" ? t("inventory.sentSupplier")
+            : type === "receive_supplier" ? t("inventory.receivedSupplier")
+              : t("inventory.updated"),
+      );
       setNotes("");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -186,9 +209,49 @@ export function InventoryPage() {
                   <SelectItem value="out">{t("inventory.stockOut")}</SelectItem>
                   <SelectItem value="adjust">{t("inventory.setAbsolute")}</SelectItem>
                   <SelectItem value="refill">{t("inventory.refillComplete")}</SelectItem>
+                  <SelectItem value="send_supplier">{t("inventory.sendSupplier")}</SelectItem>
+                  <SelectItem value="receive_supplier">{t("inventory.receiveSupplier")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            {(type === "send_supplier" || type === "receive_supplier") && (
+              <div className="space-y-1.5">
+                <Label>{t("common.supplier")}</Label>
+                <Select value={supplierId || undefined} onValueChange={setSupplierId}>
+                  <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
+                  <SelectContent>
+                    {suppliers.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {type === "send_supplier" && (
+              <>
+                <div className="space-y-1.5">
+                  <Label>{t("common.date")}</Label>
+                  <Input type="date" value={sendDate} onChange={(e) => setSendDate(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>{t("inventory.expectedReturn")}</Label>
+                  <Input type="date" value={expectedReturn} onChange={(e) => setExpectedReturn(e.target.value)} />
+                </div>
+              </>
+            )}
+            {type === "receive_supplier" && (
+              <div className="space-y-1.5">
+                <Label>{t("inventory.condition")}</Label>
+                <Select value={condition} onValueChange={(v) => setCondition(v as typeof condition)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="full">{t("inventory.condition.full")}</SelectItem>
+                    <SelectItem value="empty">{t("inventory.condition.empty")}</SelectItem>
+                    <SelectItem value="damaged">{t("inventory.condition.damaged")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label>{t("common.quantity")}</Label>
               <Input type="number" value={qty} onChange={(e) => setQty(e.target.value)} />
@@ -197,7 +260,7 @@ export function InventoryPage() {
               <Label>{type === "refill" ? t("inventory.receivedBy") : t("common.notes")}</Label>
               <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
             </div>
-            <Button className="w-full" disabled={!productId || adjust.isPending || Number(qty) < 0} onClick={() => { if (adjust.isPending) return; adjust.mutate(); }}>
+            <Button className="w-full" disabled={!productId || adjust.isPending || Number(qty) < 0 || ((type === "send_supplier" || type === "receive_supplier") && !supplierId)} onClick={() => { if (adjust.isPending) return; adjust.mutate(); }}>
               {t("inventory.apply")}
             </Button>
           </CardContent>
@@ -240,6 +303,10 @@ export function InventoryPage() {
                 render: (r) => <span className="text-sky-700 dark:text-sky-400">{r.empty}</span>,
                 className: "text-right tabular-nums",
               },
+              { key: "withCust", header: t("inventory.withCustomer"), sortable: true, sortValue: (r) => r.withCustomer, render: (r) => r.withCustomer, className: "text-right tabular-nums" },
+              { key: "withSupp", header: t("inventory.withSupplier"), sortable: true, sortValue: (r) => r.withSupplier, render: (r) => r.withSupplier, className: "text-right tabular-nums" },
+              { key: "dmg", header: t("inventory.damaged"), sortable: true, sortValue: (r) => r.damaged, render: (r) => r.damaged, className: "text-right tabular-nums" },
+              { key: "lost", header: t("inventory.lost"), sortable: true, sortValue: (r) => r.lost, render: (r) => r.lost, className: "text-right tabular-nums" },
               {
                 key: "refill",
                 header: t("inventory.refillPending"),

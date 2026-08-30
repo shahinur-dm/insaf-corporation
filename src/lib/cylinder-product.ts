@@ -40,8 +40,25 @@ export function cylinderIsEmpty(c: Pick<Cylinder, "status" | "fillLevel">) {
   return c.status === "refilling";
 }
 
-export function cylinderIsFullStock(c: Pick<Cylinder, "status" | "fillLevel">) {
-  return c.status === "in_stock" && !cylinderIsEmpty(c);
+export function cylinderIsFullStock(c: Pick<Cylinder, "status" | "fillLevel" | "supplierId">) {
+  return c.status === "in_stock" && !c.supplierId && !cylinderIsEmpty(c);
+}
+
+export function cylinderAtCustomer(c: Pick<Cylinder, "status">) {
+  return c.status === "at_customer";
+}
+
+export function cylinderAtSupplier(c: Pick<Cylinder, "status" | "supplierId">) {
+  return Boolean(c.supplierId) && c.status !== "damaged" && c.status !== "lost" && c.status !== "at_customer";
+}
+
+export function cylinderWarehouseEmpty(c: Pick<Cylinder, "status" | "fillLevel" | "supplierId">) {
+  return !c.supplierId
+    && c.status !== "at_customer"
+    && c.status !== "damaged"
+    && c.status !== "lost"
+    && c.status !== "in_transit"
+    && cylinderIsEmpty(c);
 }
 
 /** Map existing cylinder statuses into overview buckets. */

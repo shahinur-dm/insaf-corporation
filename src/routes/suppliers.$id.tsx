@@ -3,11 +3,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { FileText, Pencil, Trash2 } from "lucide-react";
 import { supplierService } from "@/services/supplier.service";
+import { cylinderService } from "@/services/cylinder.service";
+import { productService } from "@/services/product.service";
 import { PageHeader } from "@/components/common/PageHeader";
 import { DetailOrOutlet } from "@/components/common/DetailOrOutlet";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatCurrency } from "@/utils/formatters";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import { formatCurrency, formatDate } from "@/utils/formatters";
+import { supplierCylinderBalance, supplierCylinderHistory } from "@/lib/customer-cylinders";
 import { useT } from "@/i18n";
 
 export const Route = createFileRoute("/suppliers/$id")({
@@ -31,6 +37,9 @@ function SupplierDetailBody() {
     queryKey: ["suppliers", id],
     queryFn: () => supplierService.get(id),
   });
+  const { data: cylinders = [] } = useQuery({ queryKey: ["cylinders"], queryFn: cylinderService.list });
+  const { data: movements = [] } = useQuery({ queryKey: ["cylinderMovements"], queryFn: cylinderService.listMovements });
+  const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: productService.list });
 
   const remove = useMutation({
     mutationFn: () => supplierService.remove(id),
@@ -45,6 +54,9 @@ function SupplierDetailBody() {
   if (isLoading) return <div className="p-6 text-sm text-muted-foreground">{t("common.loading")}</div>;
   if (isFetched && !s) return <div className="p-6 text-sm text-destructive">{t("suppliers.notFound")}</div>;
   if (!s) return null;
+
+  const cylBal = supplierCylinderBalance(id, cylinders, movements);
+  const cylHist = supplierCylinderHistory(id, cylinders, movements, products);
 
   return (
     <div>
@@ -76,7 +88,51 @@ function SupplierDetailBody() {
       <Card><CardContent className="pt-6 grid gap-4 md:grid-cols-2 text-sm">
         <div><p className="text-xs uppercase text-muted-foreground">{t("common.phone")}</p><p className="font-medium">{s.phone}</p></div>
         <div><p className="text-xs uppercase text-muted-foreground">{t("suppliers.payable")}</p><p className="font-medium">{formatCurrency(s.openingBalance)}</p></div>
+        <p className="md:col-span-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t("customers.cylBalanceTitle")}</p>
+        <div><p className="text-xs uppercase text-muted-foreground">{t("customers.cylSent")}</p><p className="font-medium">{cylBal.sent}</p></div>
+        <div><p className="text-xs uppercase text-muted-foreground">{t("customers.cylReturned")}</p><p className="font-medium">{cylBal.returned}</p></div>
+        <div><p className="text-xs uppercase text-muted-foreground">{t("customers.cylRemaining")}</p><p className="font-medium">{cylBal.remaining}</p></div>
+        <div><p className="text-xs uppercase text-muted-foreground">{t("customers.cylOverdue")}</p><p className="font-medium">{cylBal.overdue}</p></div>
+        <div><p className="text-xs uppercase text-muted-foreground">{t("customers.cylLost")}</p><p className="font-medium">{cylBal.lost}</p></div>
+        <div><p className="text-xs uppercase text-muted-foreground">{t("customers.cylDamaged")}</p><p className="font-medium">{cylBal.damaged}</p></div>
       </CardContent></Card>
+
+      <Card className="mt-4">
+        <CardContent className="pt-6">
+          <p className="mb-3 text-xs uppercase text-muted-foreground">{t("customers.cylHistory")}</p>
+          {cylHist.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{t("common.noItems")}</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t("common.date")}</TableHead>
+                    <TableHead>{t("common.type")}</TableHead>
+                    <TableHead className="text-right">{t("customers.cylSent")}</TableHead>
+                    <TableHead className="text-right">{t("customers.cylReturned")}</TableHead>
+                    <TableHead className="text-right">{t("customers.cylRemaining")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {cylHist.map((row) => (
+                    <TableRow key={row.id}>
+                      <TableCell className="text-muted-foreground">{formatDate(row.date)}</TableCell>
+                      <TableCell>
+                        {t(row.typeKey)}
+                        {row.serial ? <span className="ml-1 font-mono text-xs text-muted-foreground">{row.serial}</span> : null}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{row.sent || "—"}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.returned || "—"}</TableCell>
+                      <TableCell className="text-right tabular-nums font-medium">{row.remaining}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

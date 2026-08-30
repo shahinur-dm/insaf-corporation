@@ -395,9 +395,20 @@ export const cylinderService = {
     const patch: Record<string, unknown> = { lastMovementAt: mv.timestamp, status };
     if (fillLevel) patch.fillLevel = fillLevel;
     if (data.toLocation) patch.location = data.toLocation;
-    if (data.type === "issued") patch.customerId = data.customerId;
-    else if (data.type === "returned" || data.type === "received") patch.customerId = null;
-    else if (data.customerId) patch.customerId = data.customerId;
+    if (data.type === "issued") {
+      patch.customerId = data.customerId;
+      patch.supplierId = null;
+    } else if (data.type === "transferred" && data.supplierId) {
+      patch.supplierId = data.supplierId;
+      patch.customerId = null;
+    } else if (data.type === "returned" || data.type === "received" || data.type === "refilled") {
+      patch.customerId = null;
+      if (data.supplierId || data.type === "received" || data.type === "refilled") patch.supplierId = null;
+    } else if (data.type === "damaged" || data.type === "lost") {
+      patch.customerId = null;
+      patch.supplierId = null;
+    } else if (data.customerId) patch.customerId = data.customerId;
+    if (data.supplierId && data.type === "transferred") patch.supplierId = data.supplierId;
     await call("update", "cylinders", data.cylinderId, patch);
     return mv;
   },
@@ -890,7 +901,7 @@ export const inventoryService = {
     if (quantity <= 0) throw new Error("Quantity must be positive");
     const cylinders = await call<Cylinder[]>("list", "cylinders");
     const empties = cylinders
-      .filter((c) => c.productId === productId && (c.status === "refilling" || (cylinderIsEmpty(c) && c.status !== "at_customer" && c.status !== "in_transit")))
+      .filter((c) => c.productId === productId && !c.supplierId && (c.status === "refilling" || (cylinderIsEmpty(c) && c.status !== "at_customer" && c.status !== "in_transit")))
       .sort((a, b) => a.lastMovementAt.localeCompare(b.lastMovementAt));
     if (empties.length < quantity) throw new Error(`Only ${empties.length} empty cylinder(s) ready to refill`);
     const picked = empties.slice(0, quantity);
@@ -914,6 +925,100 @@ export const inventoryService = {
       refType: "refill",
       notes: `Refill complete × ${quantity}`,
       by: by || "Warehouse",
+    });
+  },
+  sendToSupplier: async (data: {
+    supplierId: string;
+    productId: string;
+    quantity: number;
+    date?: string;
+    expectedReturnDate?: string;
+    notes?: string;
+  }) => {
+    const product = await call<Product | null>("get", "products", data.productId);
+    if (!product) throw new Error("Product not found");
+    const supplier = await call<Supplier | null>("get", "suppliers", data.supplierId);
+    if (!supplier) throw new Error("Supplier not found");
+    const qty = Number(data.quantity);
+    if (!Number.isFinite(qty) || qty <= 0) throw new Error("Quantity must be positive");
+    const cylinders = await call<Cylinder[]>("list", "cylinders");
+    const pool = cylinders
+      .filter((c) =>
+        c.productId === data.productId
+        && !c.supplierId
+        && c.status !== "at_customer"
+        && c.status !== "damaged"
+        && c.status !== "lost"
+        && (c.status === "refilling" || cylinderIsEmpty(c)),
+      )
+      .sort((a, b) => a.lastMovementAt.localeCompare(b.lastMovementAt));
+    if (pool.length < qty) throw new Error(`Only ${pool.length} empty cylinder(s) available to send`);
+    const expectedReturnAt = data.expectedReturnDate || undefined;
+    const when = data.date ? new Date(`${data.date}T12:00:00`).toISOString() : new Date().toISOString();
+    for (const c of pool.slice(0, qty)) {
+      await cylinderService.addMovement({
+        cylinderId: c.id,
+        type: "transferred",
+        supplierId: supplier.id,
+        fromLocation: "Warehouse",
+        toLocation: supplier.name,
+        notes: data.notes?.trim() || `Sent to supplier for refill · ${product.name}`,
+        by: "Warehouse",
+        expectedReturnAt,
+      });
+    }
+    await call("create", "stockMovements", undefined, {
+      date: when,
+      productId: product.id,
+      productName: product.name,
+      type: "out",
+      quantity: qty,
+      balanceAfter: product.stock,
+      refType: "refill",
+      notes: `Sent to ${supplier.name} × ${qty}${data.notes ? ` · ${data.notes}` : ""}`,
+      by: "Warehouse",
+    });
+  },
+  receiveFromSupplier: async (data: {
+    supplierId: string;
+    productId: string;
+    quantity: number;
+    condition: "full" | "empty" | "damaged";
+    notes?: string;
+  }) => {
+    const product = await call<Product | null>("get", "products", data.productId);
+    if (!product) throw new Error("Product not found");
+    const supplier = await call<Supplier | null>("get", "suppliers", data.supplierId);
+    if (!supplier) throw new Error("Supplier not found");
+    const qty = Number(data.quantity);
+    if (!Number.isFinite(qty) || qty <= 0) throw new Error("Quantity must be positive");
+    const cylinders = await call<Cylinder[]>("list", "cylinders");
+    const pool = cylinders
+      .filter((c) => c.productId === data.productId && c.supplierId === supplier.id && c.status !== "damaged" && c.status !== "lost")
+      .sort((a, b) => a.lastMovementAt.localeCompare(b.lastMovementAt));
+    if (pool.length < qty) throw new Error(`Only ${pool.length} cylinder(s) still with ${supplier.name}`);
+    const mvType = data.condition === "damaged" ? "damaged" : data.condition === "empty" ? "returned" : "refilled";
+    for (const c of pool.slice(0, qty)) {
+      await cylinderService.addMovement({
+        cylinderId: c.id,
+        type: mvType,
+        supplierId: supplier.id,
+        fromLocation: supplier.name,
+        toLocation: "Warehouse",
+        notes: data.notes?.trim() || `Returned from supplier (${data.condition}) · ${product.name}`,
+        by: "Warehouse",
+      });
+    }
+    await call("create", "stockMovements", undefined, {
+      date: new Date().toISOString(),
+      productId: product.id,
+      productName: product.name,
+      type: data.condition === "full" ? "in" : "return",
+      quantity: qty,
+      balanceAfter: product.stock,
+      refType: "refill",
+      notes: `Received from ${supplier.name} × ${qty} · ${data.condition}`,
+      by: "Warehouse",
     });
   },
   adjust: async (productId: string, quantity: number, type: "in" | "out" | "adjust", notes?: string) => {
