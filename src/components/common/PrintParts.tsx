@@ -13,7 +13,7 @@ export function PrintSignatures({
 }) {
   const t = useT();
   return (
-    <div className={cn("print-signatures mt-12 flex justify-between gap-8 px-2 pt-4", className)}>
+    <div className={cn("print-signatures mt-12 flex justify-between gap-8 px-2 pt-4 print:mt-4 print:gap-4 print:pt-2", className)}>
       <div className="w-40 border-t border-foreground/40 pt-2 text-center text-xs">
         {left ?? t("doc.authorizedSign")}
       </div>

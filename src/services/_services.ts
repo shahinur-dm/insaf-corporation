@@ -390,19 +390,6 @@ async function unfulfillSalesOrder(order: SalesOrder) {
   }
 }
 
-async function reconcileUnfulfilledSales() {
-  const sales = await call<SalesOrder[]>("list", "sales");
-  for (const order of sales) {
-    if (!isOpenSalesStatus(order.status)) continue;
-    if (await salesAlreadyFulfilled(order)) continue;
-    try {
-      await fulfillSalesOrder(order);
-    } catch {
-      /* Keep already-correct rows; skip orders that cannot be posted (e.g. no warehouse stock). */
-    }
-  }
-}
-
 async function hasReservation(orderId: string) {
   const all = await call<StockMovement[]>("list", "stockMovements");
   return all.some((m) => m.refType === "sales" && m.refId === orderId && /^Reserved\b/i.test(m.notes || ""));
@@ -410,9 +397,11 @@ async function hasReservation(orderId: string) {
 
 async function postReservationMoves(order: SalesOrder, verb: "Reserved" | "Reservation released") {
   if (verb === "Reserved" && (await hasReservation(order.id))) return;
-  for (const item of order.items) {
-    const product = await call<Product | null>("get", "products", item.productId);
-    await call("create", "stockMovements", undefined, {
+  const products = await call<Product[]>("list", "products");
+  const byId = new Map(products.map((p) => [p.id, p]));
+  await Promise.all(order.items.map((item) => {
+    const product = byId.get(item.productId);
+    return call("create", "stockMovements", undefined, {
       date: new Date().toISOString(),
       productId: item.productId,
       productName: item.productName,
@@ -424,7 +413,7 @@ async function postReservationMoves(order: SalesOrder, verb: "Reserved" | "Reser
       notes: `${verb} ${item.quantity} × ${item.productName} for ${order.orderNo}`,
       by: order.receiverName || "Sales",
     });
-  }
+  }));
 }
 
 async function adjustStock(
@@ -787,10 +776,7 @@ export const notificationsService = {
 };
 
 export const deliveryService = {
-  list: async () => {
-    await reconcileUnfulfilledSales();
-    return call<Delivery[]>("list", "deliveries");
-  },
+  list: () => call<Delivery[]>("list", "deliveries"),
   get: (id: string) => call<Delivery | null>("get", "deliveries", id),
   create: (data: Omit<Delivery, "id">) => call<Delivery>("create", "deliveries", undefined, data),
   update: async (id: string, data: Partial<Delivery>) => {
@@ -1261,10 +1247,7 @@ export const purchaseService = {
 };
 
 export const inventoryService = {
-  listMovements: async () => {
-    await reconcileUnfulfilledSales();
-    return call<StockMovement[]>("list", "stockMovements");
-  },
+  listMovements: () => call<StockMovement[]>("list", "stockMovements"),
   completeRefill: async (productId: string, quantity: number, by?: string) => {
     const product = await call<Product | null>("get", "products", productId);
     if (!product) throw new Error("Product not found");

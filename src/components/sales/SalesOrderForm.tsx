@@ -260,14 +260,12 @@ export function SalesOrderForm({
     },
     onSuccess: (order, asQuote) => {
       qc.invalidateQueries({ queryKey: ["sales"] });
-      qc.invalidateQueries({ queryKey: ["customers"] });
-      qc.invalidateQueries({ queryKey: ["products"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
-      qc.invalidateQueries({ queryKey: ["vouchers"] });
-      qc.invalidateQueries({ queryKey: ["ledger"] });
-      qc.invalidateQueries({ queryKey: ["stockMovements"] });
-      qc.invalidateQueries({ queryKey: ["cylinders"] });
-      qc.invalidateQueries({ queryKey: ["deliveries"] });
+      if (!asQuote) {
+        qc.invalidateQueries({ queryKey: ["products"] });
+        qc.invalidateQueries({ queryKey: ["stockMovements"] });
+        qc.invalidateQueries({ queryKey: ["cylinders"] });
+        qc.invalidateQueries({ queryKey: ["deliveries"] });
+      }
       toast.success(editing ? t("sales.updated") : asQuote || mode === "quotation" ? t("sales.quotationSaved") : t("sales.created"));
       navigate({ to: "/sales/$id", params: { id: order.id } });
     },
@@ -522,12 +520,12 @@ export function SalesOrderForm({
 
         <div className="flex flex-wrap justify-end gap-2">
           {!editing && (
-            <Button variant="outline" onClick={() => mutation.mutate(true)} disabled={mutation.isPending}>
+            <Button variant="outline" onClick={() => { if (!mutation.isPending) mutation.mutate(true); }} disabled={mutation.isPending}>
               {t("sales.saveQuotation")}
             </Button>
           )}
           <Button variant="ghost" onClick={() => navigate({ to: editing ? "/sales/$id" : "/sales", params: editing ? { id: id! } : undefined })}>{t("common.cancel")}</Button>
-          <Button onClick={() => mutation.mutate(false)} disabled={mutation.isPending}>
+          <Button onClick={() => { if (!mutation.isPending) mutation.mutate(false); }} disabled={mutation.isPending}>
             {editing ? t("common.save") : t("sales.completeOrder")}
           </Button>
         </div>

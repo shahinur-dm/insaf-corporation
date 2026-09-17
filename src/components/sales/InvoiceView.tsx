@@ -129,7 +129,7 @@ export function InvoiceView({ id }: { id: string }) {
   })();
 
   return (
-    <div>
+    <div className="invoice-print-root">
       <PageHeader
         title={`${isQuote ? t("sales.quotationLabel") : t("sales.invoice")} ${order.orderNo}`}
         description={t("sales.issuedTo", { customer: order.customerName, date: formatDate(order.date) })}
@@ -171,7 +171,7 @@ export function InvoiceView({ id }: { id: string }) {
       />
       <div className="print-layout grid gap-4 lg:grid-cols-3">
         <Card className="print-sheet lg:col-span-2">
-          <CardContent className="space-y-5 pt-6">
+          <CardContent className="space-y-5 pt-6 print:space-y-2 print:pt-2">
             <PrintDocHeader
               title={docTitle}
               subtitle={`${docNoLabel}: ${order.orderNo} · ${formatDate(order.date)}`}
@@ -268,7 +268,7 @@ export function InvoiceView({ id }: { id: string }) {
             )}
 
             {order.notes && (
-              <div className="print-avoid-break space-y-1 border-t pt-3 text-sm">
+              <div className="print-avoid-break space-y-1 border-t pt-3 text-sm print:pt-2">
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                   {t("sales.notes")}
                 </p>
@@ -276,10 +276,37 @@ export function InvoiceView({ id }: { id: string }) {
               </div>
             )}
 
+            {!isQuote && (
+              <div className="invoice-money-receipt border-t pt-2">
+                <p className="mb-2 text-center text-sm font-bold uppercase tracking-wide">{t("doc.moneyReceipt")}</p>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs sm:grid-cols-3">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("doc.receivedFrom")}</p>
+                    <p className="font-medium">{order.customerName}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("doc.reference")}</p>
+                    <p className="font-mono">{order.orderNo}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("common.paid")}</p>
+                    <p className="font-medium tabular-nums">{formatCurrency(order.paid)}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <PrintSignatures
               left={t("doc.authorizedSign")}
               right={isQuote ? t("doc.customerSign") : t("doc.receivedBy")}
             />
+            {!isQuote && (
+              <div className="print-signatures mt-4 flex justify-end print:mt-3">
+                <div className="w-40 border-t border-foreground/40 pt-2 text-center text-xs">
+                  {t("doc.customerSign")}
+                </div>
+              </div>
+            )}
             <p className="text-center text-[10px] text-muted-foreground">{t("doc.pageFooter")}</p>
           </CardContent>
         </Card>
