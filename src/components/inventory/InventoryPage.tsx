@@ -14,7 +14,6 @@ import { getCylinderTrackingFn } from "@/lib/settings.functions";
 import { PageHeader } from "@/components/common/PageHeader";
 import { DataTable } from "@/components/common/DataTable";
 import { StatCard } from "@/components/dashboard/widgets/StatCard";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,9 +21,18 @@ import { Badge } from "@/components/ui/badge";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { formatDateTime } from "@/utils/formatters";
-import { buildProductInventory, sumInventory, type ProductInventoryRow } from "@/lib/cylinder-inventory";
-import type { StockMovement } from "@/types";
+import { formatCurrency, formatDateTime } from "@/utils/formatters";
+import { buildProductInventory, sumInventory } from "@/lib/cylinder-inventory";
+import { buildStockReport } from "@/lib/stock-report";
+import { EMPTY_DATE_RANGE } from "@/lib/date-range";
+import { partyCylinderBalance } from "@/lib/customer-cylinders";
+import type { StockMovement, UnitOfMeasure } from "@/types";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useT, type MessageKey } from "@/i18n";
 
 type ActivityRow = StockMovement & {
@@ -35,6 +43,14 @@ type ActivityRow = StockMovement & {
   refill: number;
   party: string;
 };
+
+function inventoryUnitLabel(uom: UnitOfMeasure | undefined, t: (key: MessageKey) => string) {
+  if (uom === "kg") return t("inventory.unitKg");
+  if (uom === "ltr") return t("inventory.unitLtr");
+  if (uom === "cyl") return t("inventory.unitCyl");
+  if (uom === "pcs") return t("inventory.unitPcs");
+  return uom || "";
+}
 
 function activityFromMovement(m: StockMovement): ActivityRow {
   const isRefill = m.refType === "refill" || /refill/i.test(m.notes || "");
@@ -70,6 +86,7 @@ export function InventoryPage() {
   const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: productService.list });
   const { data: movements = [] } = useQuery({ queryKey: ["stockMovements"], queryFn: inventoryService.listMovements });
   const { data: cylinders = [] } = useQuery({ queryKey: ["cylinders"], queryFn: cylinderService.list });
+  const { data: cylMoves = [] } = useQuery({ queryKey: ["cylinderMovements"], queryFn: cylinderService.listMovements });
   const { data: sales = [] } = useQuery({ queryKey: ["sales"], queryFn: salesService.list });
   const { data: deliveries = [] } = useQuery({ queryKey: ["deliveries"], queryFn: deliveryService.list });
   const { data: suppliers = [] } = useQuery({ queryKey: ["suppliers"], queryFn: supplierService.list });
@@ -81,6 +98,25 @@ export function InventoryPage() {
     [products, cylinders, sales, deliveries, movements],
   );
   const totals = useMemo(() => sumInventory(rows), [rows]);
+  const summaryCards = useMemo(() => {
+    let delivery = 0;
+    let returned = 0;
+    for (const c of customers) {
+      const b = partyCylinderBalance("customer", c.id, cylinders, cylMoves);
+      delivery += b.sent;
+      returned += b.returned;
+    }
+    let received = 0;
+    for (const m of cylMoves) {
+      if (m.type === "received") received += 1;
+    }
+    return {
+      received,
+      delivery,
+      cylinder: totals.total,
+      returned,
+    };
+  }, [customers, cylinders, cylMoves, totals.total]);
   const activity = useMemo(
     () => movements.map(activityFromMovement).sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 40),
     [movements],
@@ -104,6 +140,7 @@ export function InventoryPage() {
   const [treatment, setTreatment] = useState<"charge" | "writeoff" | "none">("none");
   const [lotNumber, setLotNumber] = useState("");
   const [focus, setFocus] = useState<"all" | "full" | "empty" | "refill" | "reserved" | "available">("all");
+  const [adjustOpen, setAdjustOpen] = useState(false);
 
   const filteredRows = useMemo(() => {
     if (focus === "empty") return rows.filter((r) => r.empty > 0);
@@ -113,6 +150,27 @@ export function InventoryPage() {
     if (focus === "full") return rows.filter((r) => r.full > 0);
     return rows;
   }, [rows, focus]);
+
+  const stockByProduct = useMemo(() => {
+    const report = buildStockReport(products, movements, EMPTY_DATE_RANGE);
+    return new Map(report.map((r) => [r.id, r]));
+  }, [products, movements]);
+
+  const tableRows = useMemo(() => filteredRows.map((row) => {
+    const p = products.find((x) => x.id === row.productId);
+    const sr = stockByProduct.get(row.productId);
+    const onHand = row.full;
+    const unitCost = sr?.unitCost ?? p?.cost ?? 0;
+    return {
+      ...row,
+      stockIn: sr?.qtyIn ?? 0,
+      stockOut: sr?.qtyOut ?? 0,
+      onHand,
+      unit: inventoryUnitLabel(p?.uom, t),
+      unitCost,
+      totalValue: onHand * unitCost,
+    };
+  }), [filteredRows, products, stockByProduct, t]);
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["products"] });
@@ -185,12 +243,6 @@ export function InventoryPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const statusBadge = (s: ProductInventoryRow["status"]) => {
-    if (s === "out") return <Badge variant="destructive">{t("inventory.status.out")}</Badge>;
-    if (s === "low") return <Badge variant="outline" className="border-amber-500 text-amber-700">{t("inventory.status.low")}</Badge>;
-    return <Badge variant="secondary">{t("inventory.status.normal")}</Badge>;
-  };
-
   const openActivity = (row: ActivityRow) => {
     if (row.refType === "sales" && row.refId) navigate({ to: "/sales/$id", params: { id: row.refId } });
     else if (row.refType === "delivery" && row.refId) navigate({ to: "/deliveries/$id", params: { id: row.refId } });
@@ -200,33 +252,77 @@ export function InventoryPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title={t("inventory.title")} description={t("inventory.desc")} />
+      <PageHeader
+        title={t("inventory.title")}
+        description={t("inventory.desc")}
+        actions={
+          <Button type="button" onClick={() => setAdjustOpen(true)}>{t("inventory.adjust")}</Button>
+        }
+      />
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-6">
-        <button type="button" className="text-left" onClick={() => setFocus("all")}>
-          <StatCard title={t("inventory.totalCyl")} value={String(totals.total)} icon={Warehouse} />
-        </button>
-        <button type="button" className="text-left" onClick={() => setFocus("full")}>
-          <StatCard title={t("inventory.fullAvail")} value={String(totals.full)} icon={Cylinder} tone="positive" />
-        </button>
-        <button type="button" className="text-left" onClick={() => setFocus("empty")}>
-          <StatCard title={t("inventory.emptyCyl")} value={String(totals.empty)} icon={Package} tone="info" />
-        </button>
-        <button type="button" className="text-left" onClick={() => setFocus("refill")}>
-          <StatCard title={t("inventory.refillPending")} value={String(totals.refillPending)} icon={RefreshCw} tone="warning" />
-        </button>
-        <button type="button" className="text-left" onClick={() => setFocus("reserved")}>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button type="button" className="text-left">
+              <StatCard title={t("inventory.cardReceivedCyl")} value={String(summaryCards.received)} icon={Warehouse} />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onSelect={() => navigate({ to: "/purchases/new" })}>
+              {t("inventory.purchaseBillCreate")}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => navigate({ to: "/purchases" })}>
+              {t("inventory.receiveNoteCreate")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button type="button" className="text-left">
+              <StatCard title={t("inventory.cardDelivery")} value={String(summaryCards.delivery)} icon={Cylinder} tone="positive" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onSelect={() => navigate({ to: "/purchases/new" })}>
+              {t("inventory.purchaseBillCreate")}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => navigate({ to: "/purchases" })}>
+              {t("inventory.receiveNoteCreate")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button type="button" className="text-left">
+              <StatCard title={t("inventory.cardReturn")} value={String(summaryCards.returned)} icon={RefreshCw} tone="warning" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onSelect={() => navigate({ to: "/purchases/new" })}>
+              {t("inventory.purchaseBillCreate")}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => navigate({ to: "/purchases" })}>
+              {t("inventory.receiveNoteCreate")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <button type="button" className="text-left" onClick={() => navigate({ to: "/sales" })}>
           <StatCard title={t("inventory.reserved")} value={String(totals.reserved)} icon={Truck} />
         </button>
-        <button type="button" className="text-left" onClick={() => setFocus("available")}>
+        <button type="button" className="text-left" onClick={() => navigate({ to: "/cylinders" })}>
+          <StatCard title={t("inventory.cardCylinder")} value={String(summaryCards.cylinder)} icon={Package} tone="info" />
+        </button>
+        <button type="button" className="text-left" onClick={() => navigate({ to: "/products" })}>
           <StatCard title={t("inventory.available")} value={String(totals.available)} icon={ShoppingCart} tone="positive" />
         </button>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-1">
-          <CardContent className="space-y-3 pt-6">
-            <h3 className="font-semibold">{t("inventory.adjust")}</h3>
+      <Dialog open={adjustOpen} onOpenChange={setAdjustOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t("inventory.adjust")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
             <div className="space-y-1.5">
               <Label>{t("common.product")}</Label>
               <Select value={productId || undefined} onValueChange={setProductId}>
@@ -376,73 +472,31 @@ export function InventoryPage() {
             <Button className="w-full" disabled={!productId || adjust.isPending || Number(qty) < 0 || ((type === "send_supplier" || type === "receive_supplier" || (type === "mark_lost" && partyKind === "supplier")) && !supplierId) || ((type === "return_empty" || type === "loan" || type === "sell_cylinder" || type === "customer_sent" || type === "exchange" || (type === "mark_lost" && partyKind === "customer")) && !customerId) || ((type === "customer_sent" || type === "loan" || type === "exchange") && !expectedReturn)} onClick={() => { if (adjust.isPending) return; adjust.mutate(); }}>
               {t("inventory.apply")}
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+        </DialogContent>
+      </Dialog>
 
-        <div className="lg:col-span-2">
-          <DataTable<ProductInventoryRow>
-            rows={filteredRows}
+      <DataTable
+            rows={tableRows}
             searchKeys={["name", "category"]}
             columns={[
-              { key: "sl", header: t("inventory.sl"), render: (r) => String(r.sl).padStart(2, "0"), className: "w-12" },
+              { key: "sl", header: t("inventory.sl"), render: (r) => String(r.sl).padStart(2, "0"), className: "w-12 whitespace-nowrap" },
               {
                 key: "name",
-                header: t("inventory.productCyl"),
+                header: t("inventory.productName"),
                 sortable: true,
                 sortValue: (r) => r.name,
-                render: (r) => (
-                  <div>
-                    <p className="font-medium">{r.name}</p>
-                    {r.category && <p className="text-xs text-muted-foreground">{r.category}</p>}
-                  </div>
-                ),
+                render: (r) => <span className="whitespace-normal break-words font-medium">{r.name}</span>,
+                className: "min-w-[10rem] max-w-[18rem]",
               },
-              { key: "total", header: t("inventory.totalCyl"), sortable: true, sortValue: (r) => r.total, render: (r) => r.total, className: "text-right tabular-nums" },
-              {
-                key: "full",
-                header: t("inventory.fullAvail"),
-                sortable: true,
-                sortValue: (r) => r.full,
-                render: (r) => <span className="font-semibold text-emerald-700 dark:text-emerald-400">{r.full}</span>,
-                className: "text-right tabular-nums",
-              },
-              { key: "res", header: t("inventory.reserved"), sortable: true, sortValue: (r) => r.reserved, render: (r) => r.reserved, className: "text-right tabular-nums" },
-              { key: "del", header: t("inventory.delivered"), sortable: true, sortValue: (r) => r.delivered, render: (r) => r.delivered, className: "text-right tabular-nums" },
-              {
-                key: "empty",
-                header: t("inventory.emptyCyl"),
-                sortable: true,
-                sortValue: (r) => r.empty,
-                render: (r) => <span className="text-sky-700 dark:text-sky-400">{r.empty}</span>,
-                className: "text-right tabular-nums",
-              },
-              { key: "withCust", header: t("inventory.withCustomer"), sortable: true, sortValue: (r) => r.withCustomer, render: (r) => r.withCustomer, className: "text-right tabular-nums" },
-              { key: "withSupp", header: t("inventory.withSupplier"), sortable: true, sortValue: (r) => r.withSupplier, render: (r) => r.withSupplier, className: "text-right tabular-nums" },
-              { key: "dmg", header: t("inventory.damaged"), sortable: true, sortValue: (r) => r.damaged, render: (r) => r.damaged, className: "text-right tabular-nums" },
-              { key: "lost", header: t("inventory.lost"), sortable: true, sortValue: (r) => r.lost, render: (r) => r.lost, className: "text-right tabular-nums" },
-              {
-                key: "refill",
-                header: t("inventory.refillPending"),
-                sortable: true,
-                sortValue: (r) => r.refillPending,
-                render: (r) => (
-                  <span className={r.refillPending > 0 ? "font-medium text-amber-700 dark:text-amber-400" : ""}>{r.refillPending}</span>
-                ),
-                className: "text-right tabular-nums",
-              },
-              {
-                key: "avail",
-                header: t("inventory.available"),
-                sortable: true,
-                sortValue: (r) => r.available,
-                render: (r) => <span className="text-base font-semibold">{r.available}</span>,
-                className: "text-right tabular-nums",
-              },
-              { key: "st", header: t("common.status"), render: (r) => statusBadge(r.status) },
+              { key: "stockIn", header: t("inventory.stockIn"), sortable: true, sortValue: (r) => r.stockIn, render: (r) => r.stockIn, className: "min-w-[6rem] whitespace-nowrap text-right tabular-nums" },
+              { key: "stockOut", header: t("inventory.stockOut"), sortable: true, sortValue: (r) => r.stockOut, render: (r) => r.stockOut, className: "min-w-[6.5rem] whitespace-nowrap text-right tabular-nums" },
+              { key: "onHand", header: t("inventory.onHand"), sortable: true, sortValue: (r) => r.onHand, render: (r) => <span className="font-semibold">{r.onHand}</span>, className: "min-w-[6rem] whitespace-nowrap text-right tabular-nums" },
+              { key: "unit", header: t("products.uom"), sortable: true, sortValue: (r) => r.unit, render: (r) => r.unit, className: "min-w-[6rem] whitespace-nowrap" },
+              { key: "unitCost", header: t("inventory.unitPriceCost"), sortable: true, sortValue: (r) => r.unitCost, render: (r) => formatCurrency(r.unitCost), className: "min-w-[10rem] whitespace-nowrap text-right tabular-nums" },
+              { key: "totalValue", header: t("inventory.totalValue"), sortable: true, sortValue: (r) => r.totalValue, render: (r) => formatCurrency(r.totalValue), className: "min-w-[8rem] whitespace-nowrap text-right tabular-nums" },
             ]}
           />
-        </div>
-      </div>
 
       <div>
         <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">{t("inventory.recent")}</h3>

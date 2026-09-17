@@ -60,10 +60,18 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 
+function fallbackT(key: MessageKey, vars?: Vars) {
+  const value = (en as BnMessages)[key] ?? (bn as BnMessages)[key] ?? String(key);
+  return interpolate(value, vars);
+}
+
 export function useI18n() {
   const ctx = useContext(I18nContext);
-  if (!ctx) throw new Error("useI18n must be used within I18nProvider");
-  return ctx;
+  return ctx ?? {
+    locale: "bn" as Locale,
+    setLocale: () => {},
+    t: fallbackT,
+  };
 }
 
 export function useT() {

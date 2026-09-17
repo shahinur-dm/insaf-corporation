@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/common/PageHeader";
 import { DataTable } from "@/components/common/DataTable";
 import { RowActions, actionsColumnClass } from "@/components/common/RowActions";
 import { PartyNameLink } from "@/components/common/PartyNameLink";
-import { formatCurrency } from "@/utils/formatters";
+import { formatCurrency, formatOpenedOn } from "@/utils/formatters";
 import type { Supplier } from "@/types";
 import { useT } from "@/i18n";
 
@@ -32,7 +32,16 @@ export function SupplierList() {
       <PageHeader
         title={t("suppliers.title")}
         description={t("suppliers.desc")}
-        actions={<Button asChild><Link to="/suppliers/new"><Plus className="mr-1 h-4 w-4" /> {t("suppliers.new")}</Link></Button>}
+        actions={
+          <>
+            <Button asChild>
+              <Link to="/suppliers/report">{t("suppliers.report")}</Link>
+            </Button>
+            <Button asChild>
+              <Link to="/suppliers/new"><Plus className="mr-1 h-4 w-4" /> {t("suppliers.new")}</Link>
+            </Button>
+          </>
+        }
       />
       <DataTable<Supplier>
         rows={data}
@@ -40,6 +49,7 @@ export function SupplierList() {
         dateKey="createdAt"
         onRowClick={(r) => navigate({ to: "/suppliers/$id", params: { id: r.id } })}
         columns={[
+          { key: "since", header: t("common.date"), sortable: true, sortValue: (r) => r.createdAt, render: (r) => <span className="whitespace-nowrap text-xs text-muted-foreground">{formatOpenedOn(r.createdAt)}</span> },
           { key: "name", header: t("common.name"), sortable: true, sortValue: (r) => r.name, render: (r) => <PartyNameLink kind="supplier" id={r.id} name={r.name} /> },
           { key: "phone", header: t("common.phone"), sortable: true, sortValue: (r) => r.phone, render: (r) => r.phone },
           { key: "address", header: t("common.address"), render: (r) => <span className="text-muted-foreground">{r.address}</span> },

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Plus } from "lucide-react";
+import { Plus, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import { deliveryService } from "@/services/delivery.service";
 import { Button } from "@/components/ui/button";
@@ -40,8 +40,8 @@ export function DeliveryList() {
         dateKey="date"
         onRowClick={(r) => navigate({ to: "/deliveries/$id", params: { id: r.id } })}
         columns={[
-          { key: "no", header: t("deliveries.challanNo"), sortable: true, sortValue: (r) => r.challanNo, render: (r) => <span className="font-mono text-xs">{r.challanNo}</span> },
           { key: "date", header: t("common.date"), sortable: true, sortValue: (r) => r.date, render: (r) => formatDate(r.date) },
+          { key: "no", header: t("deliveries.challanNo"), sortable: true, sortValue: (r) => r.challanNo, render: (r) => <span className="font-mono text-xs">{r.challanNo}</span> },
           { key: "cust", header: t("common.customer"), sortable: true, sortValue: (r) => r.customerName, render: (r) => <span className="font-medium">{r.customerName}</span> },
           { key: "drv", header: t("deliveries.deliveryman"), sortable: true, sortValue: (r) => r.driverName, render: (r) => r.driverName },
           { key: "veh", header: t("deliveries.vehicle"), sortable: true, sortValue: (r) => r.vehicleNo, render: (r) => <span className="font-mono text-xs">{r.vehicleNo}</span> },
@@ -60,6 +60,11 @@ export function DeliveryList() {
                 onEdit={r.status === "pending"
                   ? () => navigate({ to: "/deliveries/$id/edit", params: { id: r.id } })
                   : undefined}
+                extras={[{
+                  label: t("deliveries.return"),
+                  icon: <Undo2 className="h-3.5 w-3.5" />,
+                  onClick: () => navigate({ to: "/deliveries/$id", params: { id: r.id } }),
+                }]}
                 onDelete={r.status === "pending" ? () => {
                   if (confirm(t("deliveries.deleteConfirm"))) remove.mutate(r.id);
                 } : undefined}

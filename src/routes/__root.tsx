@@ -179,10 +179,12 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      <I18nProvider>
       <SmoothScrollProvider>
         {isLogin ? <Outlet /> : <Layout><Outlet /></Layout>}
         {mounted && <Toaster richColors position={isLogin ? "bottom-center" : "top-right"} />}
       </SmoothScrollProvider>
+      </I18nProvider>
     </QueryClientProvider>
   );
 }

@@ -25,6 +25,7 @@ import { Route as HrIndexRouteImport } from './routes/hr.index'
 import { Route as DeliveriesIndexRouteImport } from './routes/deliveries.index'
 import { Route as CylindersIndexRouteImport } from './routes/cylinders.index'
 import { Route as CustomersIndexRouteImport } from './routes/customers.index'
+import { Route as SuppliersReportRouteImport } from './routes/suppliers.report'
 import { Route as SuppliersNewRouteImport } from './routes/suppliers.new'
 import { Route as SuppliersIdRouteImport } from './routes/suppliers.$id'
 import { Route as SalesQuotationRouteImport } from './routes/sales.quotation'
@@ -38,8 +39,10 @@ import { Route as HrEmployeesRouteImport } from './routes/hr.employees'
 import { Route as HrIdRouteImport } from './routes/hr.$id'
 import { Route as DeliveriesNewRouteImport } from './routes/deliveries.new'
 import { Route as DeliveriesIdRouteImport } from './routes/deliveries.$id'
+import { Route as CylindersReportRouteImport } from './routes/cylinders.report'
 import { Route as CylindersNewRouteImport } from './routes/cylinders.new'
 import { Route as CylindersIdRouteImport } from './routes/cylinders.$id'
+import { Route as CustomersReportRouteImport } from './routes/customers.report'
 import { Route as CustomersNewRouteImport } from './routes/customers.new'
 import { Route as CustomersIdRouteImport } from './routes/customers.$id'
 import { Route as SuppliersIdStatementRouteImport } from './routes/suppliers.$id.statement'
@@ -133,6 +136,11 @@ const CustomersIndexRoute = CustomersIndexRouteImport.update({
   path: '/customers/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SuppliersReportRoute = SuppliersReportRouteImport.update({
+  id: '/suppliers/report',
+  path: '/suppliers/report',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SuppliersNewRoute = SuppliersNewRouteImport.update({
   id: '/suppliers/new',
   path: '/suppliers/new',
@@ -198,6 +206,11 @@ const DeliveriesIdRoute = DeliveriesIdRouteImport.update({
   path: '/deliveries/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CylindersReportRoute = CylindersReportRouteImport.update({
+  id: '/cylinders/report',
+  path: '/cylinders/report',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CylindersNewRoute = CylindersNewRouteImport.update({
   id: '/cylinders/new',
   path: '/cylinders/new',
@@ -206,6 +219,11 @@ const CylindersNewRoute = CylindersNewRouteImport.update({
 const CylindersIdRoute = CylindersIdRouteImport.update({
   id: '/cylinders/$id',
   path: '/cylinders/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CustomersReportRoute = CustomersReportRouteImport.update({
+  id: '/customers/report',
+  path: '/customers/report',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CustomersNewRoute = CustomersNewRouteImport.update({
@@ -280,8 +298,10 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/customers/$id': typeof CustomersIdRouteWithChildren
   '/customers/new': typeof CustomersNewRoute
+  '/customers/report': typeof CustomersReportRoute
   '/cylinders/$id': typeof CylindersIdRouteWithChildren
   '/cylinders/new': typeof CylindersNewRoute
+  '/cylinders/report': typeof CylindersReportRoute
   '/deliveries/$id': typeof DeliveriesIdRouteWithChildren
   '/deliveries/new': typeof DeliveriesNewRoute
   '/hr/$id': typeof HrIdRouteWithChildren
@@ -295,6 +315,7 @@ export interface FileRoutesByFullPath {
   '/sales/quotation': typeof SalesQuotationRoute
   '/suppliers/$id': typeof SuppliersIdRouteWithChildren
   '/suppliers/new': typeof SuppliersNewRoute
+  '/suppliers/report': typeof SuppliersReportRoute
   '/customers/': typeof CustomersIndexRoute
   '/cylinders/': typeof CylindersIndexRoute
   '/deliveries/': typeof DeliveriesIndexRoute
@@ -324,8 +345,10 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/customers/$id': typeof CustomersIdRouteWithChildren
   '/customers/new': typeof CustomersNewRoute
+  '/customers/report': typeof CustomersReportRoute
   '/cylinders/$id': typeof CylindersIdRouteWithChildren
   '/cylinders/new': typeof CylindersNewRoute
+  '/cylinders/report': typeof CylindersReportRoute
   '/deliveries/$id': typeof DeliveriesIdRouteWithChildren
   '/deliveries/new': typeof DeliveriesNewRoute
   '/hr/$id': typeof HrIdRouteWithChildren
@@ -339,6 +362,7 @@ export interface FileRoutesByTo {
   '/sales/quotation': typeof SalesQuotationRoute
   '/suppliers/$id': typeof SuppliersIdRouteWithChildren
   '/suppliers/new': typeof SuppliersNewRoute
+  '/suppliers/report': typeof SuppliersReportRoute
   '/customers': typeof CustomersIndexRoute
   '/cylinders': typeof CylindersIndexRoute
   '/deliveries': typeof DeliveriesIndexRoute
@@ -370,8 +394,10 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/customers/$id': typeof CustomersIdRouteWithChildren
   '/customers/new': typeof CustomersNewRoute
+  '/customers/report': typeof CustomersReportRoute
   '/cylinders/$id': typeof CylindersIdRouteWithChildren
   '/cylinders/new': typeof CylindersNewRoute
+  '/cylinders/report': typeof CylindersReportRoute
   '/deliveries/$id': typeof DeliveriesIdRouteWithChildren
   '/deliveries/new': typeof DeliveriesNewRoute
   '/hr/$id': typeof HrIdRouteWithChildren
@@ -385,6 +411,7 @@ export interface FileRoutesById {
   '/sales/quotation': typeof SalesQuotationRoute
   '/suppliers/$id': typeof SuppliersIdRouteWithChildren
   '/suppliers/new': typeof SuppliersNewRoute
+  '/suppliers/report': typeof SuppliersReportRoute
   '/customers/': typeof CustomersIndexRoute
   '/cylinders/': typeof CylindersIndexRoute
   '/deliveries/': typeof DeliveriesIndexRoute
@@ -417,8 +444,10 @@ export interface FileRouteTypes {
     | '/settings'
     | '/customers/$id'
     | '/customers/new'
+    | '/customers/report'
     | '/cylinders/$id'
     | '/cylinders/new'
+    | '/cylinders/report'
     | '/deliveries/$id'
     | '/deliveries/new'
     | '/hr/$id'
@@ -432,6 +461,7 @@ export interface FileRouteTypes {
     | '/sales/quotation'
     | '/suppliers/$id'
     | '/suppliers/new'
+    | '/suppliers/report'
     | '/customers/'
     | '/cylinders/'
     | '/deliveries/'
@@ -461,8 +491,10 @@ export interface FileRouteTypes {
     | '/settings'
     | '/customers/$id'
     | '/customers/new'
+    | '/customers/report'
     | '/cylinders/$id'
     | '/cylinders/new'
+    | '/cylinders/report'
     | '/deliveries/$id'
     | '/deliveries/new'
     | '/hr/$id'
@@ -476,6 +508,7 @@ export interface FileRouteTypes {
     | '/sales/quotation'
     | '/suppliers/$id'
     | '/suppliers/new'
+    | '/suppliers/report'
     | '/customers'
     | '/cylinders'
     | '/deliveries'
@@ -506,8 +539,10 @@ export interface FileRouteTypes {
     | '/settings'
     | '/customers/$id'
     | '/customers/new'
+    | '/customers/report'
     | '/cylinders/$id'
     | '/cylinders/new'
+    | '/cylinders/report'
     | '/deliveries/$id'
     | '/deliveries/new'
     | '/hr/$id'
@@ -521,6 +556,7 @@ export interface FileRouteTypes {
     | '/sales/quotation'
     | '/suppliers/$id'
     | '/suppliers/new'
+    | '/suppliers/report'
     | '/customers/'
     | '/cylinders/'
     | '/deliveries/'
@@ -552,8 +588,10 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   CustomersIdRoute: typeof CustomersIdRouteWithChildren
   CustomersNewRoute: typeof CustomersNewRoute
+  CustomersReportRoute: typeof CustomersReportRoute
   CylindersIdRoute: typeof CylindersIdRouteWithChildren
   CylindersNewRoute: typeof CylindersNewRoute
+  CylindersReportRoute: typeof CylindersReportRoute
   DeliveriesIdRoute: typeof DeliveriesIdRouteWithChildren
   DeliveriesNewRoute: typeof DeliveriesNewRoute
   ProductsIdRoute: typeof ProductsIdRouteWithChildren
@@ -565,6 +603,7 @@ export interface RootRouteChildren {
   SalesQuotationRoute: typeof SalesQuotationRoute
   SuppliersIdRoute: typeof SuppliersIdRouteWithChildren
   SuppliersNewRoute: typeof SuppliersNewRoute
+  SuppliersReportRoute: typeof SuppliersReportRoute
   CustomersIndexRoute: typeof CustomersIndexRoute
   CylindersIndexRoute: typeof CylindersIndexRoute
   DeliveriesIndexRoute: typeof DeliveriesIndexRoute
@@ -688,6 +727,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CustomersIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/suppliers/report': {
+      id: '/suppliers/report'
+      path: '/suppliers/report'
+      fullPath: '/suppliers/report'
+      preLoaderRoute: typeof SuppliersReportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/suppliers/new': {
       id: '/suppliers/new'
       path: '/suppliers/new'
@@ -779,6 +825,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DeliveriesIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/cylinders/report': {
+      id: '/cylinders/report'
+      path: '/cylinders/report'
+      fullPath: '/cylinders/report'
+      preLoaderRoute: typeof CylindersReportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/cylinders/new': {
       id: '/cylinders/new'
       path: '/cylinders/new'
@@ -791,6 +844,13 @@ declare module '@tanstack/react-router' {
       path: '/cylinders/$id'
       fullPath: '/cylinders/$id'
       preLoaderRoute: typeof CylindersIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/customers/report': {
+      id: '/customers/report'
+      path: '/customers/report'
+      fullPath: '/customers/report'
+      preLoaderRoute: typeof CustomersReportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/customers/new': {
@@ -1002,8 +1062,10 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRoute,
   CustomersIdRoute: CustomersIdRouteWithChildren,
   CustomersNewRoute: CustomersNewRoute,
+  CustomersReportRoute: CustomersReportRoute,
   CylindersIdRoute: CylindersIdRouteWithChildren,
   CylindersNewRoute: CylindersNewRoute,
+  CylindersReportRoute: CylindersReportRoute,
   DeliveriesIdRoute: DeliveriesIdRouteWithChildren,
   DeliveriesNewRoute: DeliveriesNewRoute,
   ProductsIdRoute: ProductsIdRouteWithChildren,
@@ -1015,6 +1077,7 @@ const rootRouteChildren: RootRouteChildren = {
   SalesQuotationRoute: SalesQuotationRoute,
   SuppliersIdRoute: SuppliersIdRouteWithChildren,
   SuppliersNewRoute: SuppliersNewRoute,
+  SuppliersReportRoute: SuppliersReportRoute,
   CustomersIndexRoute: CustomersIndexRoute,
   CylindersIndexRoute: CylindersIndexRoute,
   DeliveriesIndexRoute: DeliveriesIndexRoute,
