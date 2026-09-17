@@ -9,6 +9,7 @@ import type {
 import { crudFn, dashboardFn, notificationsFn } from "@/lib/data.functions";
 import { genOrderNo } from "@/utils/helpers";
 import { cylinderIsEmpty, cylinderIsFullStock, isCylinderProduct, isCylinderSaleLine, pickFifo, suggestSerials } from "@/lib/cylinder-product";
+import { remainingOrderQty } from "@/lib/cylinder-inventory";
 import { issueLockIsActive } from "@/lib/cylinder-lock";
 
 const call = async <T,>(op: any, coll: any, id?: string, payload?: any): Promise<T> => {
@@ -277,6 +278,131 @@ async function hasStockOut(refType: NonNullable<StockMovement["refType"]>, refId
   return all.some((m) => m.refType === refType && m.refId === refId && m.type === "out");
 }
 
+async function hasStockIn(refType: NonNullable<StockMovement["refType"]>, refId: string) {
+  const all = await call<StockMovement[]>("list", "stockMovements");
+  return all.some((m) => m.refType === refType && m.refId === refId && (m.type === "in" || m.type === "return"));
+}
+
+function isOpenSalesStatus(status: SalesStatus) {
+  return status === "confirmed" || status === "invoiced" || status === "paid";
+}
+
+function defaultExpectedReturnAt() {
+  const d = new Date();
+  d.setDate(d.getDate() + 30);
+  return d.toISOString().slice(0, 10);
+}
+
+async function gasLineItems(items: LineItem[]) {
+  const products = await call<Product[]>("list", "products");
+  return items.filter((item) => !isCylinderProduct(products.find((p) => p.id === item.productId)));
+}
+
+async function hasCylinderLines(items: LineItem[]) {
+  const products = await call<Product[]>("list", "products");
+  return items.some((item) => isCylinderProduct(products.find((p) => p.id === item.productId)));
+}
+
+async function deliveredForSales(salesOrderId: string, excludeDeliveryId?: string) {
+  const deliveries = await call<Delivery[]>("list", "deliveries");
+  return deliveries.filter((d) =>
+    d.salesOrderId === salesOrderId
+    && d.id !== excludeDeliveryId
+    && (d.status === "delivered" || d.status === "confirmed"),
+  );
+}
+
+async function salesAlreadyFulfilled(order: SalesOrder, excludeDeliveryId?: string) {
+  const delivered = await deliveredForSales(order.id, excludeDeliveryId);
+  if (delivered.length === 0) {
+    if (await hasStockOut("sales", order.id)) return true;
+    return false;
+  }
+  return order.items.every((item) => remainingOrderQty(order, delivered, item.productId) <= 0);
+}
+
+async function fulfillSalesOrder(order: SalesOrder) {
+  if (!isOpenSalesStatus(order.status)) return;
+  if (await salesAlreadyFulfilled(order)) return;
+  const deliveries = await call<Delivery[]>("list", "deliveries");
+  let delivery = deliveries.find((d) => d.salesOrderId === order.id && (d.status === "pending" || d.status === "in_transit"));
+  if (!delivery) {
+    delivery = await call<Delivery>("create", "deliveries", undefined, {
+      challanNo: genOrderNo("DC"),
+      salesOrderId: order.id,
+      customerId: order.customerId,
+      customerName: order.customerName,
+      driverName: order.driverName || "",
+      vehicleNo: "",
+      items: order.items,
+      status: "pending",
+      date: order.date || new Date().toISOString(),
+      receiverName: order.receiverName,
+    });
+  }
+  const hasCyl = await hasCylinderLines(order.items);
+  await deliveryService.confirm(delivery.id, {
+    skipCylinders: !hasCyl,
+    expectedReturnAt: hasCyl ? defaultExpectedReturnAt() : undefined,
+  });
+}
+
+async function unfulfillSalesOrder(order: SalesOrder) {
+  const deliveries = await call<Delivery[]>("list", "deliveries");
+  const linked = deliveries.filter((d) => d.salesOrderId === order.id);
+  for (const d of linked) {
+    if (d.status === "pending" || d.status === "in_transit") {
+      await call("remove", "deliveries", d.id);
+      continue;
+    }
+    if (d.status !== "delivered" && d.status !== "confirmed") continue;
+    if (await hasStockOut("delivery", d.id)) {
+      const gas = await gasLineItems(d.items);
+      if (gas.length) {
+        await adjustStock(gas, 1, {
+          refType: "delivery", refId: d.id, notes: `Reverse ${d.challanNo}`, by: "Sales",
+        });
+      }
+    }
+    for (const item of d.items) {
+      for (const cid of item.cylinderIds || []) {
+        await cylinderService.addMovement({
+          cylinderId: cid,
+          type: "received",
+          customerId: d.customerId,
+          fromLocation: d.customerName,
+          toLocation: "Warehouse",
+          notes: `Reverse ${d.challanNo}`,
+          by: "Sales",
+          sold: false,
+        });
+      }
+    }
+    await call("update", "deliveries", d.id, { status: "returned" });
+  }
+  if (await hasStockOut("sales", order.id)) {
+    const gas = await gasLineItems(order.items);
+    if (gas.length) {
+      await adjustStock(gas, 1, {
+        refType: "sales", refId: order.id, notes: `Reverse ${order.orderNo}`, by: "Sales",
+      });
+    }
+  }
+}
+
+async function reconcileUnfulfilledSales() {
+  const sales = await call<SalesOrder[]>("list", "sales");
+  for (const order of sales) {
+    if (!isOpenSalesStatus(order.status)) continue;
+    if (await salesAlreadyFulfilled(order)) continue;
+    try {
+      await fulfillSalesOrder(order);
+    } catch {
+      /* Keep already-correct rows; skip orders that cannot be posted (e.g. no warehouse stock). */
+    }
+  }
+}
+
 async function hasReservation(orderId: string) {
   const all = await call<StockMovement[]>("list", "stockMovements");
   return all.some((m) => m.refType === "sales" && m.refId === orderId && /^Reserved\b/i.test(m.notes || ""));
@@ -481,7 +607,8 @@ export const cylinderService = {
     const patch: Record<string, unknown> = { lastMovementAt: mv.timestamp, status, issueLock: null };
     if (fillLevel) patch.fillLevel = fillLevel;
     if (data.toLocation) patch.location = data.toLocation;
-    if (data.sold || data.purpose === "sale") patch.ownedBy = "customer";
+    if (data.sold === false) patch.ownedBy = "company";
+    else if (data.sold || data.purpose === "sale") patch.ownedBy = "customer";
     if (data.type === "issued") {
       patch.customerId = data.customerId;
       patch.supplierId = null;
@@ -509,20 +636,31 @@ export const salesService = {
       ...data,
       createdAt: data.createdAt ?? new Date().toISOString(),
     });
-    if (data.status === "confirmed" || data.status === "invoiced") {
-      await postReservationMoves(order, "Reserved");
+    try {
+      if (isOpenSalesStatus(order.status)) {
+        await postReservationMoves(order, "Reserved");
+        await fulfillSalesOrder(order);
+      }
+      await reconcileUnfulfilledSales();
+      return await call<SalesOrder | null>("get", "sales", order.id) ?? order;
+    } catch (err) {
+      try { await unfulfillSalesOrder(order); } catch { /* compensating this attempt only */ }
+      try { await postReservationMoves(order, "Reservation released"); } catch { /* ignore */ }
+      try { await call("remove", "sales", order.id); } catch { /* ignore */ }
+      throw err;
     }
-    return order;
   },
   update: async (id: string, data: Partial<SalesOrder>) => {
     const existing = await call<SalesOrder | null>("get", "sales", id);
     if (!existing) throw new Error("Order not found");
     if (existing.status === "cancelled") throw new Error("Cancelled orders cannot be edited");
-    if (data.items && (await hasStockOut("sales", id))) {
+    if (data.items) {
+      await unfulfillSalesOrder(existing);
+    } else if (await hasStockOut("sales", id)) {
       await adjustStock(existing.items, 1, {
         refType: "sales", refId: id, notes: `Edit reverse ${existing.orderNo}`, by: "Sales",
       });
-      await adjustStock(data.items, -1, {
+      await adjustStock(data.items || existing.items, -1, {
         refType: "sales", refId: id, notes: `Edit apply ${existing.orderNo}`, by: "Sales",
       });
     }
@@ -537,16 +675,17 @@ export const salesService = {
       else if (paid > 0 && status === "paid") status = "invoiced";
     }
     const { paid: _ignorePaid, ...rest } = data;
-    return call<SalesOrder>("update", "sales", id, { ...rest, paid, status, tax: 0 });
+    const updated = await call<SalesOrder>("update", "sales", id, { ...rest, paid, status, tax: 0 });
+    if (data.items && isOpenSalesStatus(updated.status)) {
+      await fulfillSalesOrder(updated);
+    }
+    return updated;
   },
   remove: async (id: string) => {
     const existing = await call<SalesOrder | null>("get", "sales", id);
     if (!existing) throw new Error("Order not found");
-    if (await hasStockOut("sales", id)) {
-      await adjustStock(existing.items, 1, {
-        refType: "sales", refId: id, notes: `Delete ${existing.orderNo}`, by: "Sales",
-      });
-    } else if (existing.status === "confirmed" || existing.status === "invoiced" || existing.status === "paid") {
+    await unfulfillSalesOrder(existing);
+    if (!(await hasStockOut("sales", id)) && isOpenSalesStatus(existing.status)) {
       await postReservationMoves(existing, "Reservation released");
     }
     const ledger = await call<LedgerEntry[]>("list", "ledger");
@@ -569,13 +708,16 @@ export const salesService = {
       await postReservationMoves({ ...order, status }, "Reserved");
     }
     if ((order.status === "confirmed" || order.status === "invoiced") && status === "cancelled") {
-      if (await hasStockOut("sales", id)) {
-        await adjustStock(order.items, 1, { refType: "sales", refId: id, notes: `Cancel ${order.orderNo}`, by: "Sales" });
-      } else {
+      await unfulfillSalesOrder(order);
+      if (!(await hasStockOut("sales", id))) {
         await postReservationMoves(order, "Reservation released");
       }
     }
-    return call<SalesOrder>("update", "sales", id, { status });
+    const updated = await call<SalesOrder>("update", "sales", id, { status });
+    if (order.status === "draft" && isOpenSalesStatus(status)) {
+      await fulfillSalesOrder({ ...updated, status });
+    }
+    return updated;
   },
   convertQuotation: async (id: string) => {
     const order = await call<SalesOrder | null>("get", "sales", id);
@@ -586,6 +728,7 @@ export const salesService = {
       orderNo: order.orderNo.startsWith("QT") ? order.orderNo.replace(/^QT/, "SO") : order.orderNo,
     });
     await postReservationMoves(updated, "Reserved");
+    await fulfillSalesOrder(updated);
     return updated;
   },
   recordPayment: async (id: string, amount: number, method: PaymentMethod = "cash", accountName?: string) => {
@@ -644,7 +787,10 @@ export const notificationsService = {
 };
 
 export const deliveryService = {
-  list: () => call<Delivery[]>("list", "deliveries"),
+  list: async () => {
+    await reconcileUnfulfilledSales();
+    return call<Delivery[]>("list", "deliveries");
+  },
   get: (id: string) => call<Delivery | null>("get", "deliveries", id),
   create: (data: Omit<Delivery, "id">) => call<Delivery>("create", "deliveries", undefined, data),
   update: async (id: string, data: Partial<Delivery>) => {
@@ -664,6 +810,17 @@ export const deliveryService = {
     if (!delivery) throw new Error("Delivery not found");
     if (delivery.status !== "pending" && delivery.status !== "in_transit") {
       throw new Error("Already confirmed");
+    }
+
+    if (delivery.salesOrderId) {
+      const so = await call<SalesOrder | null>("get", "sales", delivery.salesOrderId);
+      if (so && await salesAlreadyFulfilled(so, id)) {
+        return call<Delivery>("update", "deliveries", id, {
+          status: "delivered",
+          confirmedAt: new Date().toISOString(),
+          items: delivery.items,
+        });
+      }
     }
 
     const products = await call<Product[]>("list", "products");
@@ -825,6 +982,22 @@ export const deliveryService = {
       items: nextItems,
     });
     } catch (err) {
+      for (const cid of claimedIds) {
+        try {
+          const cyl = await call<Cylinder | null>("get", "cylinders", cid);
+          if (cyl?.status === "at_customer") {
+            await cylinderService.addMovement({
+              cylinderId: cid,
+              type: "received",
+              fromLocation: delivery.customerName,
+              toLocation: "Warehouse",
+              notes: `Rollback ${delivery.challanNo}`,
+              by: "Delivery",
+              sold: false,
+            });
+          }
+        } catch { /* keep trying remaining cylinders */ }
+      }
       await releaseIssueLocks(claimedIds);
       throw err;
     }
@@ -1018,7 +1191,9 @@ export const purchaseService = {
     }
 
     const grnNo = genOrderNo("GRN");
-    await adjustStock(nextItems, 1, { refType: "purchase", refId: id, notes: grnNo, by: "Warehouse" });
+    if (!(await hasStockIn("purchase", id))) {
+      await adjustStock(nextItems, 1, { refType: "purchase", refId: id, notes: grnNo, by: "Warehouse" });
+    }
 
     for (const item of nextItems) {
       for (const cid of item.cylinderIds || []) {
@@ -1086,7 +1261,10 @@ export const purchaseService = {
 };
 
 export const inventoryService = {
-  listMovements: () => call<StockMovement[]>("list", "stockMovements"),
+  listMovements: async () => {
+    await reconcileUnfulfilledSales();
+    return call<StockMovement[]>("list", "stockMovements");
+  },
   completeRefill: async (productId: string, quantity: number, by?: string) => {
     const product = await call<Product | null>("get", "products", productId);
     if (!product) throw new Error("Product not found");

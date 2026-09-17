@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
@@ -9,7 +9,7 @@ import { salesService } from "@/services/sales.service";
 import { computeTotals, genOrderNo, lineAmount, paymentStatus } from "@/utils/helpers";
 import { formatCurrency } from "@/utils/formatters";
 import { salesOrderSchema } from "@/utils/validators";
-import type { LineItem } from "@/types";
+import type { Customer, LineItem, Product } from "@/types";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,19 @@ import { inventoryService } from "@/services/inventory.service";
 import { buildProductInventory } from "@/lib/cylinder-inventory";
 import { isCylinderMovementOnly, isCylinderProduct, isCylinderSaleLine, lineFromProduct } from "@/lib/cylinder-product";
 import { Checkbox } from "@/components/ui/checkbox";
+import { cn } from "@/lib/utils";
+
+function emptyLine(): LineItem {
+  return { productId: "", productName: "", quantity: 1, price: 0, taxRate: 0 };
+}
+
+function customerMatches(c: Customer, q: string) {
+  const n = q.trim().toLowerCase();
+  if (!n) return true;
+  return [c.name, c.phone, c.whatsapp, c.email, c.address]
+    .filter(Boolean)
+    .some((v) => String(v).toLowerCase().includes(n));
+}
 
 export function SalesOrderForm({
   mode = "order",
@@ -59,52 +72,99 @@ export function SalesOrderForm({
   const stockRows = buildProductInventory(products, cylinders, sales, deliveries, movements);
 
   const [customerId, setCustomerId] = useState<string>("");
+  const [customerName, setCustomerName] = useState("");
+  const [contactNo, setContactNo] = useState("");
+  const [address, setAddress] = useState("");
+  const [customerOpen, setCustomerOpen] = useState(false);
+  const [productOpenIdx, setProductOpenIdx] = useState<number | null>(null);
+  const [productQuery, setProductQuery] = useState("");
   const [driverName, setDriverName] = useState("");
   const [receiverName, setReceiverName] = useState("");
   const [notes, setNotes] = useState("");
-  const [items, setItems] = useState<LineItem[]>([]);
+  const [items, setItems] = useState<LineItem[]>([emptyLine()]);
   const [sellGasOnly, setSellGasOnly] = useState(false);
   const [hydrated, setHydrated] = useState(!editing);
 
   useEffect(() => {
     if (!existing) return;
     setCustomerId(existing.customerId);
+    setCustomerName(existing.customerName || "");
+    setContactNo(existing.customerPhone || "");
+    setAddress(existing.customerAddress || "");
     setDriverName(existing.driverName ?? "");
     setReceiverName(existing.receiverName ?? "");
     setNotes(existing.notes ?? "");
-    setItems(existing.items);
+    setItems(existing.items?.length ? existing.items : [emptyLine()]);
     setHydrated(true);
   }, [existing]);
 
   useEffect(() => {
-    if (editing || items.length > 0 || !products[0]) return;
-    setItems([lineFromProduct(products[0])]);
-  }, [editing, items.length, products]);
+    if (!customerId || contactNo || address) return;
+    const c = customers.find((x) => x.id === customerId);
+    if (!c) return;
+    setContactNo(c.phone || "");
+    setAddress(c.address || "");
+    if (!customerName) setCustomerName(c.name);
+  }, [customerId, customers, contactNo, address, customerName]);
+
+  const filteredCustomers = useMemo(
+    () => customers.filter((c) => customerMatches(c, customerName)).slice(0, 12),
+    [customers, customerName],
+  );
 
   const update = (idx: number, patch: Partial<LineItem>) => {
-    setItems(items.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
+    setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
   };
 
-  const billedItems = items
-    .filter((it) => !sellGasOnly || !isCylinderProduct(products.find((p) => p.id === it.productId)))
-    .map((it) => {
-      const p = products.find((x) => x.id === it.productId);
-      return isCylinderMovementOnly(it, p) ? { ...it, price: 0 } : it;
-    });
-  const totals = computeTotals(billedItems);
+  const totals = computeTotals(
+    items
+      .filter((it) => it.productId && (!sellGasOnly || !isCylinderProduct(products.find((p) => p.id === it.productId))))
+      .map((it) => {
+        const p = products.find((x) => x.id === it.productId);
+        return isCylinderMovementOnly(it, p) ? { ...it, price: 0 } : it;
+      }),
+  );
+
+  const rowAmount = (it: LineItem) => {
+    const p = products.find((x) => x.id === it.productId);
+    const billed = isCylinderMovementOnly(it, p) ? { ...it, price: 0 } : it;
+    return lineAmount(billed);
+  };
+
+  const applyProduct = (idx: number, p: Product) => {
+    update(idx, { ...lineFromProduct(p), quantity: items[idx]?.quantity || 1 });
+    setProductOpenIdx(null);
+    setProductQuery("");
+  };
+
+  const setLineKind = (idx: number, kind: "gas" | "cylinder") => {
+    const it = items[idx];
+    const current = products.find((p) => p.id === it.productId);
+    const matches = (p: Product) => (kind === "cylinder" ? isCylinderProduct(p) : !isCylinderProduct(p));
+    if (current && matches(current)) return;
+    const next = products.find(matches);
+    if (next) applyProduct(idx, next);
+  };
 
   const mutation = useMutation({
     mutationFn: async () => {
+      const workingItems = (sellGasOnly
+        ? items.filter((it) => !isCylinderProduct(products.find((p) => p.id === it.productId)))
+        : items
+      ).filter((it) => it.productId && it.productName && Number(it.quantity) > 0);
+      if (workingItems.length === 0) throw new Error(t("common.noItems"));
+
+      const name = customerName.trim();
       const parsed = salesOrderSchema.safeParse({
-        customerId, notes, items, driverName: driverName || undefined, receiverName: receiverName || undefined,
+        customerId: customerId || undefined,
+        customerName: name,
+        notes,
+        items: workingItems,
+        driverName: driverName || undefined,
+        receiverName: receiverName || undefined,
       });
       if (!parsed.success) throw new Error(parsed.error.errors[0]?.message || "Invalid form");
-      const customer = customers.find((c) => c.id === customerId);
-      if (!customer) throw new Error(t("common.select"));
-      const workingItems = sellGasOnly
-        ? items.filter((it) => !isCylinderProduct(products.find((p) => p.id === it.productId)))
-        : items;
-      if (workingItems.length === 0) throw new Error(t("common.noItems"));
+
       for (const it of workingItems) {
         const row = stockRows.find((r) => r.productId === it.productId);
         if (row && it.quantity > row.available) {
@@ -112,55 +172,90 @@ export function SalesOrderForm({
         }
       }
 
+      let resolvedId = customerId;
+      let resolvedName = name;
+      const selected = customers.find((c) => c.id === resolvedId);
+      if (selected) {
+        resolvedName = selected.name;
+      } else {
+        const exact = customers.find((c) => c.name.trim().toLowerCase() === name.toLowerCase());
+        if (exact) {
+          resolvedId = exact.id;
+          resolvedName = exact.name;
+        } else {
+          const created = await customerService.create({
+            name,
+            phone: contactNo.trim() || "N/A",
+            address: address.trim() || "N/A",
+            openingBalance: 0,
+            openingBalanceType: "receivable",
+            creditLimit: 0,
+          });
+          resolvedId = created.id;
+          resolvedName = created.name;
+        }
+      }
+
+      const nextItems = workingItems.map((it) => {
+        const p = products.find((x) => x.id === it.productId);
+        const movementOnly = isCylinderMovementOnly(it, p);
+        return {
+          ...it,
+          taxRate: 0,
+          price: movementOnly ? 0 : it.price,
+          sellCylinder: isCylinderSaleLine(it, p),
+        };
+      });
+      const nextTotals = computeTotals(
+        nextItems.map((it) => {
+          const p = products.find((x) => x.id === it.productId);
+          return isCylinderMovementOnly(it, p) ? { ...it, price: 0 } : it;
+        }),
+      );
+
+      const extra = {
+        customerPhone: contactNo.trim() || undefined,
+        customerAddress: address.trim() || undefined,
+      };
+
       if (editing && existing) {
         if (existing.status === "cancelled") {
           throw new Error(t("sales.cannotEdit"));
         }
-        const nextItems = workingItems.map((it) => {
-          const p = products.find((x) => x.id === it.productId);
-          const movementOnly = isCylinderMovementOnly(it, p);
-          return {
-            ...it,
-            taxRate: 0,
-            price: movementOnly ? 0 : it.price,
-            sellCylinder: isCylinderSaleLine(it, p),
-          };
-        });
         return salesService.update(id!, {
-          customerId,
-          customerName: customer.name,
+          customerId: resolvedId,
+          customerName: resolvedName,
           items: nextItems,
-          subtotal: totals.subtotal,
+          subtotal: nextTotals.subtotal,
           tax: 0,
-          total: totals.total,
+          total: nextTotals.total,
           notes,
           driverName: driverName || undefined,
           receiverName: receiverName.trim() || undefined,
+          ...extra,
         });
       }
 
       return salesService.create({
         orderNo: genOrderNo(mode === "quotation" ? "QT" : "SO"),
-        customerId, customerName: customer.name,
+        customerId: resolvedId,
+        customerName: resolvedName,
         date: new Date().toISOString(),
-        items: workingItems.map((it) => {
-          const p = products.find((x) => x.id === it.productId);
-          const movementOnly = isCylinderMovementOnly(it, p);
-          return {
-            ...it,
-            taxRate: 0,
-            price: movementOnly ? 0 : it.price,
-            sellCylinder: isCylinderSaleLine(it, p),
-          };
-        }),
-        subtotal: totals.subtotal, tax: 0, total: totals.total,
-        paid: 0, status: mode === "quotation" ? "draft" : "confirmed", notes,
+        items: nextItems,
+        subtotal: nextTotals.subtotal,
+        tax: 0,
+        total: nextTotals.total,
+        paid: 0,
+        status: mode === "quotation" ? "draft" : "confirmed",
+        notes,
         driverName: driverName || undefined,
         receiverName: receiverName.trim() || undefined,
+        ...extra,
       });
     },
     onSuccess: (order) => {
       qc.invalidateQueries({ queryKey: ["sales"] });
+      qc.invalidateQueries({ queryKey: ["customers"] });
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
       qc.invalidateQueries({ queryKey: ["vouchers"] });
@@ -184,18 +279,58 @@ export function SalesOrderForm({
   return (
     <div>
       <PageHeader title={editing ? t("sales.edit") : mode === "quotation" ? t("sales.newQuotation") : t("sales.newOrder")} backTo={editing ? { to: "/sales/$id", params: { id: id! } } : "/sales"} />
-      <Card><CardContent className="pt-6 space-y-6">
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-1.5">
+      <Card><CardContent className="pt-6 space-y-4">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div className="relative space-y-1.5">
             <Label>{t("common.customer")}</Label>
-            <Select value={customerId} onValueChange={setCustomerId}>
-              <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
-              <SelectContent>
-                {customers.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            {customers.find((c) => c.id === customerId)?.phone && (
-              <p className="text-xs text-muted-foreground">{customers.find((c) => c.id === customerId)?.phone} · {customers.find((c) => c.id === customerId)?.address}</p>
+            <Input
+              value={customerName}
+              placeholder={t("sales.searchCustomer")}
+              onChange={(e) => {
+                setCustomerName(e.target.value);
+                setCustomerId("");
+                setCustomerOpen(true);
+              }}
+              onFocus={() => setCustomerOpen(true)}
+              onBlur={() => window.setTimeout(() => setCustomerOpen(false), 180)}
+            />
+            {customerOpen && (filteredCustomers.length > 0 || customerName.trim().length > 1) && (
+              <ul className="absolute z-50 mt-1 max-h-56 w-full overflow-auto rounded-md border bg-popover py-1 text-sm shadow-md">
+                {filteredCustomers.map((c) => (
+                  <li key={c.id}>
+                    <button
+                      type="button"
+                      className="flex w-full flex-col items-start px-3 py-1.5 text-left hover:bg-accent"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        setCustomerId(c.id);
+                        setCustomerName(c.name);
+                        setContactNo(c.phone || "");
+                        setAddress(c.address || "");
+                        setCustomerOpen(false);
+                      }}
+                    >
+                      <span className="font-medium">{c.name}</span>
+                      <span className="text-xs text-muted-foreground">{[c.phone, c.address].filter(Boolean).join(" · ")}</span>
+                    </button>
+                  </li>
+                ))}
+                {customerName.trim().length > 1 && !customers.some((c) => c.name.trim().toLowerCase() === customerName.trim().toLowerCase()) && (
+                  <li>
+                    <button
+                      type="button"
+                      className="w-full px-3 py-1.5 text-left text-xs text-muted-foreground hover:bg-accent"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        setCustomerId("");
+                        setCustomerOpen(false);
+                      }}
+                    >
+                      {t("sales.useTypedCustomer", { name: customerName.trim() })}
+                    </button>
+                  </li>
+                )}
+              </ul>
             )}
           </div>
           <div className="space-y-1.5">
@@ -221,11 +356,19 @@ export function SalesOrderForm({
               <Input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder={t("common.select")} />
             )}
           </div>
-          <div className="space-y-1.5 md:col-span-2">
+          <div className="space-y-1.5">
+            <Label>{t("sales.contactNo")}</Label>
+            <Input value={contactNo} onChange={(e) => setContactNo(e.target.value)} />
+          </div>
+          <div className="space-y-1.5 md:col-span-2 xl:col-span-2">
+            <Label>{t("common.address")}</Label>
+            <Input value={address} onChange={(e) => setAddress(e.target.value)} />
+          </div>
+          <div className="space-y-1.5 md:col-span-2 xl:col-span-3">
             <Label>{t("common.notes")}</Label>
             <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t("common.optionalNotes")} />
           </div>
-          <label className="md:col-span-2 flex items-center gap-2 text-sm">
+          <label className="md:col-span-2 xl:col-span-3 flex items-center gap-2 text-sm">
             <Checkbox checked={sellGasOnly} onCheckedChange={(v) => setSellGasOnly(v === true)} />
             <span>{t("sales.sellGasOnly")}</span>
             <span className="text-xs text-muted-foreground">{t("sales.sellGasOnlyHint")}</span>
@@ -233,40 +376,101 @@ export function SalesOrderForm({
         </div>
 
         <div>
-          <div className="mb-2">
+          <div className="mb-2 flex items-center justify-between gap-2">
             <h3 className="text-sm font-semibold">{t("sales.item")}</h3>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setItems((prev) => [...prev, emptyLine()])}
+            >
+              {t("sales.addItem")}
+            </Button>
           </div>
           <div className="overflow-hidden rounded-md border">
             <div className="overflow-x-auto">
             <Table>
               <TableHeader><TableRow>
-                <TableHead>{t("common.product")}</TableHead><TableHead className="w-24 text-right">{t("common.quantity")}</TableHead>
-                <TableHead className="w-32 text-right">{t("common.price")}</TableHead>
-                <TableHead className="w-32 text-right">{t("common.lineTotal")}</TableHead><TableHead className="w-10" />
+                <TableHead className="w-10">{t("inventory.sl")}</TableHead>
+                <TableHead className="min-w-[14rem]">{t("common.product")}</TableHead>
+                <TableHead className="w-28">{t("common.category")}</TableHead>
+                <TableHead className="w-32">{t("sales.gasOrCylinder")}</TableHead>
+                <TableHead className="w-20 text-right">{t("common.quantity")}</TableHead>
+                <TableHead className="w-28 text-right">{t("common.price")}</TableHead>
+                <TableHead className="w-28 text-right">{t("common.subtotal")}</TableHead>
+                <TableHead className="w-10" />
               </TableRow></TableHeader>
               <TableBody>
                 {items.length === 0 && (
-                  <TableRow><TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">{t("common.noItems")}</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">{t("common.noItems")}</TableCell></TableRow>
                 )}
-                {items.map((it, idx) => (
+                {items.map((it, idx) => {
+                  const p = products.find((x) => x.id === it.productId);
+                  const kind = isCylinderProduct(p) ? "cylinder" : "gas";
+                  const q = productQuery.trim().toLowerCase();
+                  const productChoices = products.filter((prod) => {
+                    if (productOpenIdx !== idx) return true;
+                    if (!q) return true;
+                    return `${prod.name} ${prod.code} ${prod.category}`.toLowerCase().includes(q);
+                  });
+                  return (
                   <TableRow key={idx}>
-                    <TableCell>
-                      <Select value={it.productId || undefined} onValueChange={(v) => {
-                        const p = products.find((x) => x.id === v);
-                        if (p) update(idx, { ...lineFromProduct(p), quantity: it.quantity });
-                      }}>
-                        <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
-                        <SelectContent className="max-h-72">
-                          {products.filter((p) => p.id).map((p) => {
-                            const row = stockRows.find((r) => r.productId === p.id);
-                            const avail = row?.available ?? p.stock ?? 0;
+                    <TableCell className="tabular-nums text-muted-foreground">{idx + 1}</TableCell>
+                    <TableCell className="relative min-w-[14rem]">
+                      <Input
+                        value={productOpenIdx === idx ? productQuery : (it.productName || "")}
+                        placeholder={t("common.select")}
+                        onFocus={() => {
+                          setProductOpenIdx(idx);
+                          setProductQuery(it.productName || "");
+                        }}
+                        onChange={(e) => {
+                          setProductOpenIdx(idx);
+                          setProductQuery(e.target.value);
+                        }}
+                        onBlur={() => window.setTimeout(() => {
+                          if (productOpenIdx === idx) {
+                            setProductOpenIdx(null);
+                            setProductQuery("");
+                          }
+                        }, 180)}
+                      />
+                      {productOpenIdx === idx && (
+                        <ul className="absolute z-50 mt-1 max-h-56 w-[min(24rem,70vw)] overflow-auto rounded-md border bg-popover py-1 text-sm shadow-md">
+                          {productChoices.slice(0, 20).map((prod) => {
+                            const row = stockRows.find((r) => r.productId === prod.id);
+                            const avail = row?.available ?? prod.stock ?? 0;
                             const oos = avail <= 0;
                             return (
-                              <SelectItem key={p.id} value={p.id} disabled={oos && p.id !== it.productId}>
-                                {p.name} · {p.code} · {avail} {p.uom}{oos ? ` · ${t("inventory.status.out")}` : ""}
-                              </SelectItem>
+                              <li key={prod.id}>
+                                <button
+                                  type="button"
+                                  disabled={oos && prod.id !== it.productId}
+                                  className={cn("flex w-full flex-col items-start px-3 py-1.5 text-left hover:bg-accent disabled:opacity-50")}
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  onClick={() => applyProduct(idx, prod)}
+                                >
+                                  <span className="font-medium">{prod.name}</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {prod.code} · {avail} {prod.uom}{oos ? ` · ${t("inventory.status.out")}` : ""}
+                                  </span>
+                                </button>
+                              </li>
                             );
                           })}
+                          {productChoices.length === 0 && (
+                            <li className="px-3 py-2 text-xs text-muted-foreground">{t("common.noItems")}</li>
+                          )}
+                        </ul>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{p?.category || "—"}</TableCell>
+                    <TableCell>
+                      <Select value={kind} onValueChange={(v) => setLineKind(idx, v as "gas" | "cylinder")}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="gas">{t("products.type.gas")}</SelectItem>
+                          <SelectItem value="cylinder">{t("products.type.cylinder")}</SelectItem>
                         </SelectContent>
                       </Select>
                     </TableCell>
@@ -281,10 +485,11 @@ export function SalesOrderForm({
                       })()}
                     </TableCell>
                     <TableCell><Input type="number" step="0.01" value={it.price} onChange={(e) => update(idx, { price: Number(e.target.value) })} className="text-right" /></TableCell>
-                    <TableCell className="text-right font-medium">{formatCurrency(lineAmount(billedItems[idx] ?? it))}</TableCell>
+                    <TableCell className="text-right font-medium tabular-nums">{formatCurrency(rowAmount(it))}</TableCell>
                     <TableCell><Button size="icon" variant="ghost" onClick={() => setItems(items.filter((_, i) => i !== idx))}><Trash2 className="h-4 w-4" /></Button></TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
             </div>

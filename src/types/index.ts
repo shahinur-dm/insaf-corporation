@@ -175,6 +175,8 @@ export interface SalesOrder {
   /** Assigned deliveryman name when set on the sales order */
   driverName?: string;
   receiverName?: string;
+  customerPhone?: string;
+  customerAddress?: string;
 }
 
 export interface Delivery {

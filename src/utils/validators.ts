@@ -85,7 +85,8 @@ export const lineItemSchema = z.object({
 });
 
 export const salesOrderSchema = z.object({
-  customerId: z.string().min(1, "Select a customer"),
+  customerId: z.string().optional(),
+  customerName: z.string().min(2, "Customer name required"),
   notes: z.string().optional(),
   driverName: z.string().optional(),
   receiverName: z.string().optional(),
