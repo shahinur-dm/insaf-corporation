@@ -340,7 +340,7 @@ async function fulfillSalesOrder(order: SalesOrder) {
       receiverName: order.receiverName,
     });
   }
-  const hasCyl = await hasCylinderLines(order.items);
+  const hasCyl = order.sellGasOnly ? false : await hasCylinderLines(order.items);
   await deliveryService.confirm(delivery.id, {
     skipCylinders: !hasCyl,
     expectedReturnAt: hasCyl ? defaultExpectedReturnAt() : undefined,
@@ -639,14 +639,14 @@ export const salesService = {
     try {
       if (isOpenSalesStatus(order.status)) {
         await postReservationMoves(order, "Reserved");
-        await fulfillSalesOrder(order);
+        try {
+          await fulfillSalesOrder(order);
+        } catch {
+          /* Keep the saved order; stock can post on delivery if warehouse qty is short. */
+        }
       }
-      await reconcileUnfulfilledSales();
       return await call<SalesOrder | null>("get", "sales", order.id) ?? order;
     } catch (err) {
-      try { await unfulfillSalesOrder(order); } catch { /* compensating this attempt only */ }
-      try { await postReservationMoves(order, "Reservation released"); } catch { /* ignore */ }
-      try { await call("remove", "sales", order.id); } catch { /* ignore */ }
       throw err;
     }
   },

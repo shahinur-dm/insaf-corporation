@@ -177,6 +177,7 @@ export interface SalesOrder {
   receiverName?: string;
   customerPhone?: string;
   customerAddress?: string;
+  sellGasOnly?: boolean;
 }
 
 export interface Delivery {

@@ -324,6 +324,8 @@ export const bn = {
   "sales.title": "সেলস অর্ডার",
   "sales.desc": "অর্ডার, ইনভয়েস ও পেমেন্ট।",
   "sales.new": "নতুন অর্ডার",
+  "sales.completeOrder": "অর্ডার সম্পন্ন",
+  "sales.saveQuotation": "কোটেশন সেভ",
   "sales.quotation": "কোটেশন",
   "sales.newOrder": "নতুন সেলস অর্ডার",
   "sales.newQuotation": "নতুন কোটেশন",

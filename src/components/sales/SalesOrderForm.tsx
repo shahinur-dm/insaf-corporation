@@ -31,6 +31,7 @@ import { buildProductInventory } from "@/lib/cylinder-inventory";
 import { isCylinderMovementOnly, isCylinderProduct, isCylinderSaleLine, lineFromProduct } from "@/lib/cylinder-product";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 function emptyLine(): LineItem {
   return { productId: "", productName: "", quantity: 1, price: 0, taxRate: 0 };
@@ -94,6 +95,7 @@ export function SalesOrderForm({
     setDriverName(existing.driverName ?? "");
     setReceiverName(existing.receiverName ?? "");
     setNotes(existing.notes ?? "");
+    setSellGasOnly(Boolean(existing.sellGasOnly));
     setItems(existing.items?.length ? existing.items : [emptyLine()]);
     setHydrated(true);
   }, [existing]);
@@ -132,7 +134,9 @@ export function SalesOrderForm({
   };
 
   const applyProduct = (idx: number, p: Product) => {
-    update(idx, { ...lineFromProduct(p), quantity: items[idx]?.quantity || 1 });
+    setItems((prev) => prev.map((it, i) => (
+      i === idx ? { ...lineFromProduct(p), quantity: it.quantity || 1 } : it
+    )));
     setProductOpenIdx(null);
     setProductQuery("");
   };
@@ -147,11 +151,8 @@ export function SalesOrderForm({
   };
 
   const mutation = useMutation({
-    mutationFn: async () => {
-      const workingItems = (sellGasOnly
-        ? items.filter((it) => !isCylinderProduct(products.find((p) => p.id === it.productId)))
-        : items
-      ).filter((it) => it.productId && it.productName && Number(it.quantity) > 0);
+    mutationFn: async (asQuote: boolean) => {
+      const workingItems = items.filter((it) => it.productId && it.productName && Number(it.quantity) > 0);
       if (workingItems.length === 0) throw new Error(t("common.noItems"));
 
       const name = customerName.trim();
@@ -165,10 +166,12 @@ export function SalesOrderForm({
       });
       if (!parsed.success) throw new Error(parsed.error.errors[0]?.message || "Invalid form");
 
-      for (const it of workingItems) {
-        const row = stockRows.find((r) => r.productId === it.productId);
-        if (row && it.quantity > row.available) {
-          throw new Error(t("sales.stockWarn", { qty: row.available }));
+      if (!sellGasOnly) {
+        for (const it of workingItems) {
+          const row = stockRows.find((r) => r.productId === it.productId);
+          if (row && it.quantity > row.available) {
+            throw new Error(t("sales.stockWarn", { qty: row.available }));
+          }
         }
       }
 
@@ -216,6 +219,7 @@ export function SalesOrderForm({
       const extra = {
         customerPhone: contactNo.trim() || undefined,
         customerAddress: address.trim() || undefined,
+        sellGasOnly,
       };
 
       if (editing && existing) {
@@ -232,12 +236,13 @@ export function SalesOrderForm({
           notes,
           driverName: driverName || undefined,
           receiverName: receiverName.trim() || undefined,
+          status: asQuote ? "draft" : existing.status === "draft" ? "confirmed" : existing.status,
           ...extra,
         });
       }
 
       return salesService.create({
-        orderNo: genOrderNo(mode === "quotation" ? "QT" : "SO"),
+        orderNo: genOrderNo(asQuote || mode === "quotation" ? "QT" : "SO"),
         customerId: resolvedId,
         customerName: resolvedName,
         date: new Date().toISOString(),
@@ -246,14 +251,14 @@ export function SalesOrderForm({
         tax: 0,
         total: nextTotals.total,
         paid: 0,
-        status: mode === "quotation" ? "draft" : "confirmed",
+        status: asQuote || mode === "quotation" ? "draft" : "confirmed",
         notes,
         driverName: driverName || undefined,
         receiverName: receiverName.trim() || undefined,
         ...extra,
       });
     },
-    onSuccess: (order) => {
+    onSuccess: (order, asQuote) => {
       qc.invalidateQueries({ queryKey: ["sales"] });
       qc.invalidateQueries({ queryKey: ["customers"] });
       qc.invalidateQueries({ queryKey: ["products"] });
@@ -263,7 +268,7 @@ export function SalesOrderForm({
       qc.invalidateQueries({ queryKey: ["stockMovements"] });
       qc.invalidateQueries({ queryKey: ["cylinders"] });
       qc.invalidateQueries({ queryKey: ["deliveries"] });
-      toast.success(editing ? t("sales.updated") : mode === "quotation" ? t("sales.quotationSaved") : t("sales.created"));
+      toast.success(editing ? t("sales.updated") : asQuote || mode === "quotation" ? t("sales.quotationSaved") : t("sales.created"));
       navigate({ to: "/sales/$id", params: { id: order.id } });
     },
     onError: (e: Error) => toast.error(e.message),
@@ -407,62 +412,59 @@ export function SalesOrderForm({
                 {items.map((it, idx) => {
                   const p = products.find((x) => x.id === it.productId);
                   const kind = isCylinderProduct(p) ? "cylinder" : "gas";
-                  const q = productQuery.trim().toLowerCase();
-                  const productChoices = products.filter((prod) => {
-                    if (productOpenIdx !== idx) return true;
-                    if (!q) return true;
-                    return `${prod.name} ${prod.code} ${prod.category}`.toLowerCase().includes(q);
-                  });
                   return (
                   <TableRow key={idx}>
                     <TableCell className="tabular-nums text-muted-foreground">{idx + 1}</TableCell>
-                    <TableCell className="relative min-w-[14rem]">
-                      <Input
-                        value={productOpenIdx === idx ? productQuery : (it.productName || "")}
-                        placeholder={t("common.select")}
-                        onFocus={() => {
-                          setProductOpenIdx(idx);
-                          setProductQuery(it.productName || "");
-                        }}
-                        onChange={(e) => {
-                          setProductOpenIdx(idx);
-                          setProductQuery(e.target.value);
-                        }}
-                        onBlur={() => window.setTimeout(() => {
-                          if (productOpenIdx === idx) {
-                            setProductOpenIdx(null);
-                            setProductQuery("");
-                          }
-                        }, 180)}
-                      />
-                      {productOpenIdx === idx && (
-                        <ul className="absolute z-50 mt-1 max-h-56 w-[min(24rem,70vw)] overflow-auto rounded-md border bg-popover py-1 text-sm shadow-md">
-                          {productChoices.slice(0, 20).map((prod) => {
-                            const row = stockRows.find((r) => r.productId === prod.id);
-                            const avail = row?.available ?? prod.stock ?? 0;
-                            const oos = avail <= 0;
-                            return (
-                              <li key={prod.id}>
-                                <button
-                                  type="button"
-                                  disabled={oos && prod.id !== it.productId}
-                                  className={cn("flex w-full flex-col items-start px-3 py-1.5 text-left hover:bg-accent disabled:opacity-50")}
-                                  onMouseDown={(e) => e.preventDefault()}
-                                  onClick={() => applyProduct(idx, prod)}
-                                >
-                                  <span className="font-medium">{prod.name}</span>
-                                  <span className="text-xs text-muted-foreground">
-                                    {prod.code} · {avail} {prod.uom}{oos ? ` · ${t("inventory.status.out")}` : ""}
-                                  </span>
-                                </button>
-                              </li>
-                            );
-                          })}
-                          {productChoices.length === 0 && (
-                            <li className="px-3 py-2 text-xs text-muted-foreground">{t("common.noItems")}</li>
-                          )}
-                        </ul>
-                      )}
+                    <TableCell className="min-w-[14rem]">
+                      <Popover open={productOpenIdx === idx} onOpenChange={(open) => {
+                        setProductOpenIdx(open ? idx : null);
+                        setProductQuery(open ? (it.productName || "") : "");
+                      }}>
+                        <PopoverTrigger asChild>
+                          <Button type="button" variant="outline" className="h-9 w-full justify-start font-normal">
+                            <span className={cn("truncate", !it.productName && "text-muted-foreground")}>
+                              {it.productName || t("common.select")}
+                            </span>
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-80 p-2" align="start">
+                          <Input
+                            autoFocus
+                            value={productQuery}
+                            placeholder={t("common.select")}
+                            onChange={(e) => setProductQuery(e.target.value)}
+                            className="mb-2"
+                          />
+                          <ul className="max-h-56 overflow-auto">
+                            {products
+                              .filter((prod) => {
+                                const q = productQuery.trim().toLowerCase();
+                                if (!q) return true;
+                                return `${prod.name} ${prod.code} ${prod.category}`.toLowerCase().includes(q);
+                              })
+                              .slice(0, 40)
+                              .map((prod) => {
+                                const row = stockRows.find((r) => r.productId === prod.id);
+                                const avail = row?.available ?? prod.stock ?? 0;
+                                return (
+                                  <li key={prod.id}>
+                                    <button
+                                      type="button"
+                                      className="flex w-full flex-col items-start rounded-sm px-2 py-1.5 text-left hover:bg-accent"
+                                      onClick={() => applyProduct(idx, prod)}
+                                    >
+                                      <span className="font-medium">{prod.name}</span>
+                                      <span className="text-xs text-muted-foreground">
+                                        {prod.code} · {avail} {prod.uom}
+                                        {avail <= 0 ? ` · ${t("inventory.status.out")}` : ""}
+                                      </span>
+                                    </button>
+                                  </li>
+                                );
+                              })}
+                          </ul>
+                        </PopoverContent>
+                      </Popover>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{p?.category || "—"}</TableCell>
                     <TableCell>
@@ -518,10 +520,15 @@ export function SalesOrderForm({
           </div>
         </div>
 
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
+          {!editing && (
+            <Button variant="outline" onClick={() => mutation.mutate(true)} disabled={mutation.isPending}>
+              {t("sales.saveQuotation")}
+            </Button>
+          )}
           <Button variant="ghost" onClick={() => navigate({ to: editing ? "/sales/$id" : "/sales", params: editing ? { id: id! } : undefined })}>{t("common.cancel")}</Button>
-          <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
-            {editing ? t("common.save") : mode === "quotation" ? t("sales.quotation") : t("sales.new")}
+          <Button onClick={() => mutation.mutate(false)} disabled={mutation.isPending}>
+            {editing ? t("common.save") : t("sales.completeOrder")}
           </Button>
         </div>
       </CardContent></Card>

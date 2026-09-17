@@ -317,6 +317,8 @@ export const en = {
   "sales.title": "Sales Orders",
   "sales.desc": "Orders, invoices and payments.",
   "sales.new": "New Order",
+  "sales.completeOrder": "Complete Order",
+  "sales.saveQuotation": "Save Quotation",
   "sales.quotation": "Quotation",
   "sales.newOrder": "New Sales Order",
   "sales.newQuotation": "New Quotation",
